@@ -6,6 +6,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Security.Authentication;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -35,8 +36,10 @@ public sealed class ApiClient
         {
             UseCookies = true,
             CookieContainer = _cookies,
-            AutomaticDecompression = DecompressionMethods.All
+            AutomaticDecompression = DecompressionMethods.All,
+            SslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13
         };
+
         _http = new HttpClient(handler)
         {
             BaseAddress = new Uri(BaseUrl + "/"),
@@ -196,8 +199,18 @@ public sealed class ApiClient
     {
         var text = await response.Content.ReadAsStringAsync(ct);
         if (string.IsNullOrWhiteSpace(text)) return default;
-        try { return JsonSerializer.Deserialize<T>(text, new JsonSerializerOptions { PropertyNameCaseInsensitive = true, PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower }); }
-        catch (JsonException) { return default; }
+        try
+        {
+            return JsonSerializer.Deserialize<T>(text, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true,
+                PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
+            });
+        }
+        catch (JsonException)
+        {
+            return default;
+        }
     }
 
     private static string GetError<T>(T? result, HttpResponseMessage response) =>
