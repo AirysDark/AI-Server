@@ -1,7 +1,0 @@
-{
-    "learning_enabled_by_default": true,
-    "training_mode": "automatic",
-    "auto_learn_conversation": true,
-    "save_user_preferences": true,
-    "save_reply_patterns": true
-}

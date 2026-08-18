@@ -1,1 +1,10 @@
-.env.env
+.env
+__pycache__/
+*.py[cod]
+*.tmp
+accounts.json
+ais.json
+sessions.json
+password_resets.json
+users/
+learning/
