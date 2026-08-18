@@ -13,7 +13,7 @@ using System.Threading.Tasks;
 
 namespace AIServerWindows;
 
-public sealed class ApiClient
+public sealed class ApiClient(string? baseUrl = null)
 {
     public const string DefaultBaseUrl = "https://ai-server.ddns.net";
 
@@ -26,15 +26,13 @@ public sealed class ApiClient
     private readonly CookieContainer _cookies = new();
     private readonly HttpClient _http;
 
-    public string BaseUrl { get; }
+    public string BaseUrl { get; } = (baseUrl ?? DefaultBaseUrl).TrimEnd('/');
     public bool IsAuthenticated { get; private set; }
     public string? UserId { get; private set; }
     public string? ActiveAiId { get; set; }
 
-    public ApiClient(string? baseUrl = null)
+    public ApiClient
     {
-        BaseUrl = (baseUrl ?? DefaultBaseUrl).TrimEnd('/');
-
         var handler = new HttpClientHandler
         {
             UseCookies = true,
@@ -100,7 +98,7 @@ public sealed class ApiClient
     }
 
     public async Task<List<AiSummary>> GetAisAsync(CancellationToken ct = default) =>
-        (await GetAsync<AisResponse>("api/ais", ct))?.Ais ?? new List<AiSummary>();
+        (await GetAsync<AisResponse>("api/ais", ct))?.Ais ?? [];
 
     public async Task<ConversationResponse> GetConversationAsync(CancellationToken ct = default) =>
         await GetAsync<ConversationResponse>("api/user", ct) ?? new ConversationResponse();
@@ -233,8 +231,7 @@ public sealed class ApiClient
     };
 }
 
-public sealed class ApiException : Exception
+public sealed class ApiException(string message, HttpStatusCode statusCode) : Exception(message)
 {
-    public HttpStatusCode StatusCode { get; }
-    public ApiException(string message, HttpStatusCode statusCode) : base(message) => StatusCode = statusCode;
+    public HttpStatusCode StatusCode { get; } = statusCode;
 }
