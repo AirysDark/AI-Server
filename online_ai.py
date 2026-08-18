@@ -6,6 +6,7 @@ import json
 from brain import learn_online_response, process_feedback_queue
 from api import huggingface
 from api.providers import chat as provider_chat, provider_name
+from core.config import USERS_DIR
 
 _HEALTH = {}
 _FAILURE_COOLDOWN = 300
@@ -24,16 +25,28 @@ def _mark_failure(key, error=None):
     _HEALTH[key] = {"failed_at": time.time(), "error": str(error or "")[:300]}
 
 
-def _process_pending_feedback(settings):
-    if not isinstance(settings, dict) or not settings.get("_feedback_queue"):
-        return
+def _ai_storage_root(settings):
+    """Return the user's AI directory from the central persistent storage."""
+    if not isinstance(settings, dict):
+        return None
     uid = str(settings.get("user_id", "")).strip()
     ai_id = str(settings.get("ai_id", "")).strip()
     if not uid or not ai_id:
-        return
+        return None
     safe_uid = re.sub(r"[^A-Za-z0-9_-]", "", uid)[:100]
     safe_ai = re.sub(r"[^A-Za-z0-9_-]", "", ai_id)[:100]
-    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "users", safe_uid, "ais", safe_ai)
+    if not safe_uid or not safe_ai:
+        return None
+    return os.path.join(USERS_DIR, safe_uid, "ais", safe_ai)
+
+
+def _process_pending_feedback(settings):
+    if not isinstance(settings, dict) or not settings.get("_feedback_queue"):
+        return
+    root = _ai_storage_root(settings)
+    if not root:
+        return
+    os.makedirs(root, exist_ok=True)
     learning_path = os.path.join(root, "learning_replies.json")
     process_feedback_queue(settings, learning_path)
     try:
@@ -85,6 +98,8 @@ Maintain continuity with the conversation and use the supplied profile naturally
 
 def _token(settings, provider):
     if provider == "huggingface":
+        # User-scoped credentials live in that AI's settings.json.
+        # The environment fallback is retained for server/admin testing only.
         token = str(settings.get("hf_token", "")).strip()
         return token or os.getenv("HF_TOKEN", "").strip()
     token = str(settings.get("api_token", "") or settings.get("openai_token", "")).strip()
