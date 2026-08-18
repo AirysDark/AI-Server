@@ -16,8 +16,11 @@ from core.stage4_bridge import apply as _apply_stage4
 _apply_stage3()
 _apply_stage4()
 
-# Conversation routes are installed after AIHandler is available.
-import chats_api  # noqa: E402,F401
+# Install conversation routes after AIHandler is available. Merely importing
+# chats_api does not install its routes; doing this explicitly is required for
+# /api/chats, /api/chats/new and /api/chats/open to reach the archive logic.
+import chats_api  # noqa: E402
+chats_api.install_handler_routes(AIHandler, __import__("core.server_impl", fromlist=["AIHandler"]))
 
 PORT = __import__("core.config", fromlist=["PORT"]).PORT
 PUBLIC_URL = __import__("core.config", fromlist=["PUBLIC_URL"]).PUBLIC_URL
