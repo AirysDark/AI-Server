@@ -16,22 +16,25 @@ namespace AIServerWindows;
 public sealed class ApiClient
 {
     public const string DefaultBaseUrl = "https://ai-server.ddns.net";
-    private readonly CookieContainer _cookies = new();
-    private readonly HttpClient _http;
-    private readonly JsonSerializerOptions _json = new()
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
     };
 
+    private readonly CookieContainer _cookies = new();
+    private readonly HttpClient _http;
+
     public string BaseUrl { get; }
     public bool IsAuthenticated { get; private set; }
     public string? UserId { get; private set; }
-    public string? ActiveAiId { get; private set; }
+    public string? ActiveAiId { get; set; }
 
     public ApiClient(string? baseUrl = null)
     {
         BaseUrl = (baseUrl ?? DefaultBaseUrl).TrimEnd('/');
+
         var handler = new HttpClientHandler
         {
             UseCookies = true,
@@ -73,9 +76,11 @@ public sealed class ApiClient
             ["email"] = email,
             ["password"] = password
         };
-        if (username is not null) payload["username"] = username;
 
-        using var response = await _http.PostAsJsonAsync(path, payload, _json, ct);
+        if (username is not null)
+            payload["username"] = username;
+
+        using var response = await _http.PostAsJsonAsync(path, payload, JsonOptions, ct);
         var result = await ReadResponseAsync<AuthResponse>(response, ct);
         if (!response.IsSuccessStatusCode)
             throw new ApiException(result?.Error ?? response.ReasonPhrase ?? "Authentication failed", response.StatusCode);
@@ -172,8 +177,10 @@ public sealed class ApiClient
 
     public string ResolveUrl(string? path)
     {
-        if (string.IsNullOrWhiteSpace(path)) return BaseUrl;
-        if (Uri.TryCreate(path, UriKind.Absolute, out var absolute)) return absolute.ToString();
+        if (string.IsNullOrWhiteSpace(path))
+            return BaseUrl;
+        if (Uri.TryCreate(path, UriKind.Absolute, out var absolute))
+            return absolute.ToString();
         return BaseUrl + "/" + path.TrimStart('/');
     }
 
@@ -188,7 +195,7 @@ public sealed class ApiClient
 
     private async Task<TResponse?> PostAsync<TResponse, TRequest>(string path, TRequest request, CancellationToken ct)
     {
-        using var response = await _http.PostAsJsonAsync(path, request, _json, ct);
+        using var response = await _http.PostAsJsonAsync(path, request, JsonOptions, ct);
         var result = await ReadResponseAsync<TResponse>(response, ct);
         if (!response.IsSuccessStatusCode)
             throw new ApiException(GetError(result, response), response.StatusCode);
@@ -198,14 +205,12 @@ public sealed class ApiClient
     private static async Task<T?> ReadResponseAsync<T>(HttpResponseMessage response, CancellationToken ct)
     {
         var text = await response.Content.ReadAsStringAsync(ct);
-        if (string.IsNullOrWhiteSpace(text)) return default;
+        if (string.IsNullOrWhiteSpace(text))
+            return default;
+
         try
         {
-            return JsonSerializer.Deserialize<T>(text, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true,
-                PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
-            });
+            return JsonSerializer.Deserialize<T>(text, JsonOptions);
         }
         catch (JsonException)
         {
