@@ -10,8 +10,10 @@
     <AssemblyName>AI-Server</AssemblyName>
     <RootNamespace>AIServerWindows</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>..\icon\icon.png</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.WindowsDesktop.App.WPF" />
+    <Resource Include="..\icon\icon.png" />
   </ItemGroup>
 </Project>
