@@ -1,34 +1,15 @@
 *{box-sizing:border-box}
-body{margin:0;background:#101014;color:#eee;font-family:Arial,sans-serif;padding:12px}
+body{margin:0;background:#101014;color:#eee;font-family:Arial,sans-serif;padding:12px;line-height:1.55}
 .card{background:#181820;border:1px solid #333;border-radius:14px;padding:14px;margin-bottom:12px}
 .header{position:relative;display:flex;align-items:flex-end;gap:15px;min-height:190px;padding:105px 14px 14px;overflow:hidden;background-size:cover;background-position:center;background-repeat:no-repeat}
-.header:before{content:"";position:absolute;inset:0;background:linear-gradient(to bottom,rgba(10,10,14,.15),rgba(10,10,14,.88));z-index:0}
-.header>*{position:relative;z-index:1}
-.header-info{flex:1;min-width:0}
+.header:before{content:"";position:absolute;inset:0;background:linear-gradient(to bottom,rgba(10,10,14,.15),rgba(10,10,14,.88));z-index:0}.header>*{position:relative;z-index:1}.header-info{flex:1;min-width:0}
 .avatar{width:90px;height:90px;min-width:90px;max-width:90px;aspect-ratio:1/1;display:block;border-radius:50%;object-fit:cover;object-position:center;border:3px solid #ff77aa;overflow:hidden}
-.banner-upload{position:absolute!important;right:12px;top:12px;z-index:3!important;background:rgba(20,20,25,.78);border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:8px;padding:8px 11px;font-size:12px;cursor:pointer}
-.banner-upload:hover{background:rgba(255,92,154,.9)}
-#bannerPhoto{display:none}
-.chat{height:55vh;overflow:auto;background:#0b0b0e;border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:8px}
-.msg{max-width:85%;padding:10px;border-radius:12px;white-space:pre-wrap}
-.user{margin-left:auto;background:#245}
-.AI{margin-right:auto;background:#292936}
-.timestamp{font-size:10px;color:#aaa;display:block;text-align:right;margin-top:4px}
-.image-preview{max-width:100%;border-radius:10px}
-.actions{display:flex;gap:8px;flex-wrap:wrap}
-.actions button{flex:1;min-width:110px}
-.input,textarea,select{width:100%;background:#222;color:#fff;border:1px solid #555;border-radius:8px;padding:11px;margin:6px 0 12px}
-textarea{min-height:90px}
-button{background:#ff5c9a;color:#fff;border:0;border-radius:8px;padding:10px 16px;margin-top:6px;cursor:pointer}
-button:disabled{background:#555}
-.file{display:block;text-align:center;background:#ff5c9a;color:#fff;padding:12px;border-radius:8px;cursor:pointer}
-.status{color:#8cff8c;font-size:13px}
-.debug{font-size:11px;color:#888;font-family:monospace}
-.typing{display:none}
-.section{border-top:1px solid #333;margin-top:15px;padding-top:8px}
-.setting-row{display:flex;gap:10px;align-items:center;background:#111118;border-radius:10px;padding:10px;margin:8px 0}
-.setting-row input{width:20px}
-.small{font-size:12px;color:#aaa}
-.settings{display:none}
-.token-link{display:inline-block;color:#ff77aa;margin:-4px 0 12px;text-decoration:none}
-.token-link:hover{text-decoration:underline}
+.banner-upload{position:absolute!important;right:12px;top:12px;z-index:3!important;background:rgba(20,20,25,.78);border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:8px;padding:8px 11px;font-size:12px;cursor:pointer}.banner-upload:hover{background:rgba(255,92,154,.9)}#bannerPhoto{display:none}
+.chat{height:55vh;overflow:auto;background:#0b0b0e;border-radius:14px;padding:18px 14px;display:flex;flex-direction:column;gap:16px;scroll-behavior:smooth}
+.msg{max-width:88%;padding:12px 14px;border-radius:14px;white-space:normal;overflow-wrap:anywhere}.user{margin-left:auto;background:#245}.AI{margin-right:auto;background:#292936}
+.message-content{font-size:15px}.message-content p{margin:0 0 12px}.message-content p:last-child{margin-bottom:0}.message-content h1,.message-content h2,.message-content h3,.message-content h4,.message-content h5,.message-content h6{margin:16px 0 8px;line-height:1.25}.message-content h1{font-size:1.5em}.message-content h2{font-size:1.35em}.message-content h3{font-size:1.2em}.message-content strong{font-weight:700}.message-content em{font-style:italic}.message-content a{color:#79b8ff;text-decoration:underline}.message-content ul,.message-content ol{padding-left:24px;margin:8px 0}.message-content li{margin:3px 0}.message-content blockquote{border-left:3px solid #777;margin:10px 0;padding:4px 12px;color:#c7c7cf}
+.inline-code{font-family:Consolas,monospace;background:#15151b;border:1px solid #3a3a45;border-radius:5px;padding:2px 5px;font-size:.92em}
+.code-block{margin:12px 0 2px;background:#111116;border:1px solid #3a3a45;border-radius:9px;overflow:auto}.code-header{display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:#1c1c23;color:#aaa;font-size:11px}.code-block code{display:block;padding:12px;font-family:Consolas,Monaco,monospace;font-size:13px;line-height:1.5;white-space:pre;overflow-x:auto;color:#eee}.copy-code{margin:0;padding:4px 9px;font-size:11px;background:#30303a}
+.message-actions{display:flex;align-items:center;gap:2px;margin-top:9px;border-top:1px solid rgba(255,255,255,.08);padding-top:5px}.message-action{background:transparent;color:#aaa;border:0;border-radius:6px;padding:4px 8px;margin:0;font-size:12px;min-width:auto}.message-action:hover{background:#383842;color:#fff}.message-action.feedback{font-size:15px}.message-action.selected{background:#444;color:#fff}
+.timestamp{font-size:10px;color:#999;display:block;text-align:right;margin-top:6px}.image-preview{max-width:100%;border-radius:10px}.actions{display:flex;gap:8px;flex-wrap:wrap}.actions button{flex:1;min-width:110px}
+.input,textarea,select{width:100%;background:#222;color:#fff;border:1px solid #555;border-radius:8px;padding:11px;margin:6px 0 12px}textarea{min-height:90px}button{background:#ff5c9a;color:#fff;border:0;border-radius:8px;padding:10px 16px;margin-top:6px;cursor:pointer}button:disabled{background:#555}.file{display:block;text-align:center;background:#ff5c9a;color:#fff;padding:12px;border-radius:8px;cursor:pointer}.status{color:#8cff8c;font-size:13px}.debug{font-size:11px;color:#888;font-family:monospace}.typing{display:none}.section{border-top:1px solid #333;margin-top:15px;padding-top:8px}.setting-row{display:flex;gap:10px;align-items:center;background:#111118;border-radius:10px;padding:10px;margin:8px 0}.setting-row input{width:20px}.small{font-size:12px;color:#aaa}.settings{display:none}.token-link{display:inline-block;color:#ff77aa;margin:-4px 0 12px;text-decoration:none}.token-link:hover{text-decoration:underline}
