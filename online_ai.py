@@ -7,6 +7,8 @@ try:
 except ImportError:
     import requests_compat as requests
 
+from brain import learn_online_response
+
 HF_URL = "https://router.huggingface.co/v1/chat/completions"
 HF_MODELS_URL = "https://router.huggingface.co/v1/models"
 
@@ -92,7 +94,9 @@ def ask_online(prompt,settings=None,knowledge="",image_path=None):
             try:data=response.json()
             except Exception:data={"error":response.text[:500]}
             if response.status_code<400 and data.get("choices"):
-                _mark_success(model);print("ONLINE AI USING MODEL:",model);return data["choices"][0]["message"]["content"]
+                _mark_success(model);reply=data["choices"][0]["message"]["content"]
+                learn_online_response(prompt,reply,settings)
+                print("ONLINE AI USING MODEL:",model);return reply
             _mark_failure(model,data);print("ONLINE AI MODEL FAILED:",model,data)
         except requests.RequestException as e:
             _mark_failure(model,e);print("ONLINE AI ERROR:",model,e)
