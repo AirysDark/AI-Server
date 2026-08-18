@@ -24,29 +24,31 @@ public sealed class ApiClient(string? baseUrl = null)
     };
 
     private readonly CookieContainer _cookies = new();
-    private readonly HttpClient _http;
 
     public string BaseUrl { get; } = (baseUrl ?? DefaultBaseUrl).TrimEnd('/');
     public bool IsAuthenticated { get; private set; }
     public string? UserId { get; private set; }
     public string? ActiveAiId { get; set; }
 
-    public ApiClient
+    private readonly HttpClient _http = CreateHttpClient(_cookies, BaseUrl);
+
+    private static HttpClient CreateHttpClient(CookieContainer cookies, string baseUrl)
     {
         var handler = new HttpClientHandler
         {
             UseCookies = true,
-            CookieContainer = _cookies,
+            CookieContainer = cookies,
             AutomaticDecompression = DecompressionMethods.All,
             SslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13
         };
 
-        _http = new HttpClient(handler)
+        var client = new HttpClient(handler)
         {
-            BaseAddress = new Uri(BaseUrl + "/"),
+            BaseAddress = new Uri(baseUrl + "/"),
             Timeout = TimeSpan.FromMinutes(5)
         };
-        _http.DefaultRequestHeaders.UserAgent.ParseAdd("AI-Server-Windows/1.0");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("AI-Server-Windows/1.0");
+        return client;
     }
 
     public async Task<HealthResponse> HealthAsync(CancellationToken ct = default) =>
