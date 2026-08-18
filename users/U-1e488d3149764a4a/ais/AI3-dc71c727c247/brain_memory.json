@@ -1,0 +1,14 @@
+{
+    "profile": {},
+    "facts": {},
+    "preferences": {},
+    "personality": {},
+    "conversations": [
+        {
+            "time": "2026-08-17T15:30:29.318401",
+            "user": "Send me a photo",
+            "AI": "I'm sorry, but I don't have the ability to send or retrieve photos directly. However, I can help you find a way to take one if you'd like! How about we pretend I'm a camera and you describe what you want the photo to be of?"
+        }
+    ],
+    "learning_mode": true
+}

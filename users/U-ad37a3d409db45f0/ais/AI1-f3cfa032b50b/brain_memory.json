@@ -1,0 +1,24 @@
+{
+    "profile": {},
+    "facts": {},
+    "preferences": {},
+    "personality": {},
+    "conversations": [
+        {
+            "time": "2026-08-17T15:02:32.375507",
+            "user": "Heu",
+            "AI": "Jodie, are you okay? Do you need something? And just to check in, have you had any meth lately?"
+        },
+        {
+            "time": "2026-08-17T15:05:47.421021",
+            "user": "Hello",
+            "AI": "Hey Jodie, is everything alright? And just to check in, have you had any meth today? I'm just making sure you're okay."
+        },
+        {
+            "time": "2026-08-17T15:06:31.746820",
+            "user": "So what's your day been up to",
+            "AI": "Not much, just trying to keep away from Dan and his constant talk about meth. He's been pretty persistent today, trying to get me to do some \"math\" with him. It's really starting to get on my nerves. How about you? Have you been avoiding Dan too?"
+        }
+    ],
+    "learning_mode": true
+}

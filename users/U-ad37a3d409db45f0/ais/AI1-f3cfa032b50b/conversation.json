@@ -1,0 +1,25 @@
+{
+    "conversation": [
+        {
+            "user": "Heu",
+            "AI": "Jodie, are you okay? Do you need something? And just to check in, have you had any meth lately?",
+            "timestamp": "2026-08-17T15:02:32"
+        },
+        {
+            "user": "Hello",
+            "AI": "Hey Jodie, is everything alright? And just to check in, have you had any meth today? I'm just making sure you're okay.",
+            "timestamp": "2026-08-17T15:05:47"
+        },
+        {
+            "user": "So what's your day been up to",
+            "AI": "Not much, just trying to keep away from Dan and his constant talk about meth. He's been pretty persistent today, trying to get me to do some \"math\" with him. It's really starting to get on my nerves. How about you? Have you been avoiding Dan too?",
+            "timestamp": "2026-08-17T15:06:31"
+        }
+    ],
+    "memory": {},
+    "proactive_state": {
+        "activity_key": "1786943256744",
+        "sent": false,
+        "delay_minutes": 13
+    }
+}

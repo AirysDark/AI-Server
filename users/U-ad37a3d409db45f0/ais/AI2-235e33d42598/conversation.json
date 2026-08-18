@@ -1,0 +1,20 @@
+{
+    "conversation": [
+        {
+            "user": "Hello",
+            "AI": "I will remember useful details.",
+            "timestamp": "2026-08-18T21:47:12"
+        },
+        {
+            "user": "6",
+            "AI": "Hi Jodie — I see “6,” but I’m not sure what you’d like me to do with it. Did you mean to send a number, choose option 6, continue a pattern, or something else?",
+            "timestamp": "2026-08-18T21:51:44"
+        }
+    ],
+    "memory": {},
+    "proactive_state": {
+        "activity_key": "1787053899673",
+        "sent": false,
+        "delay_minutes": 13
+    }
+}

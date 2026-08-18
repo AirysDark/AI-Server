@@ -1,0 +1,9 @@
+{
+    "conversation": [],
+    "memory": {},
+    "proactive_state": {
+        "activity_key": "1786945415568",
+        "sent": false,
+        "delay_minutes": 26
+    }
+}
