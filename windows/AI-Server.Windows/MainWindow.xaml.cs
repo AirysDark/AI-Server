@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
@@ -20,11 +21,54 @@ public partial class MainWindow : Window
     public ObservableCollection<ChatMessage> Messages { get; } = new();
 
     public MainWindow() { InitializeComponent(); DataContext = this; Loaded += MainWindow_Loaded; }
-    private async void MainWindow_Loaded(object sender, RoutedEventArgs e) { try { var health = await _api.HealthAsync(); LoginStatus.Text = health.Ok ? $"Connected to {health.Host}" : "Server responded, but health check failed."; } catch (Exception ex) { LoginStatus.Text = "Server unavailable: " + ex.Message; } }
+
+    private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var health = await _api.HealthAsync();
+            LoginStatus.Text = health.Ok ? $"Connected to {health.Host}" : "Server responded, but health check failed.";
+        }
+        catch (Exception ex)
+        {
+            LoginStatus.Text = FormatException("Server unavailable", ex);
+        }
+    }
+
     private async void Login_Click(object sender, RoutedEventArgs e) => await Authenticate(() => _api.LoginAsync(EmailBox.Text.Trim(), PasswordBox.Password));
     private async void Register_Click(object sender, RoutedEventArgs e) => await Authenticate(() => _api.RegisterAsync(EmailBox.Text.Trim(), PasswordBox.Password, UsernameBox.Text.Trim()));
 
-    private async Task Authenticate(Func<Task<AuthResponse>> action) { try { SetLoginEnabled(false); LoginStatus.Text = "Connecting..."; await action(); await ShowMainAsync(); } catch (Exception ex) { LoginStatus.Text = ex.Message; } finally { SetLoginEnabled(true); } }
+    private async Task Authenticate(Func<Task<AuthResponse>> action)
+    {
+        try
+        {
+            SetLoginEnabled(false);
+            LoginStatus.Text = "Connecting to AI-Server...";
+            await action();
+            await ShowMainAsync();
+        }
+        catch (Exception ex)
+        {
+            LoginStatus.Text = FormatException("Connection failed", ex);
+        }
+        finally
+        {
+            SetLoginEnabled(true);
+        }
+    }
+
+    private static string FormatException(string prefix, Exception ex)
+    {
+        var lines = new List<string> { prefix + ": " + ex.Message };
+        var inner = ex.InnerException;
+        while (inner != null)
+        {
+            lines.Add("Inner: " + inner.Message);
+            inner = inner.InnerException;
+        }
+        return string.Join(Environment.NewLine, lines);
+    }
+
     private void SetLoginEnabled(bool enabled) { EmailBox.IsEnabled = enabled; UsernameBox.IsEnabled = enabled; PasswordBox.IsEnabled = enabled; }
     private async Task ShowMainAsync() { LoginView.Visibility = Visibility.Collapsed; MainView.Visibility = Visibility.Visible; await RefreshAisAsync(); await LoadCurrentAiAsync(); }
 
@@ -47,7 +91,7 @@ public partial class MainWindow : Window
             OnlineAiCheck.IsChecked = settings.Features.OnlineAi; LearningCheck.IsChecked = settings.Features.Learning; MemoryCheck.IsChecked = settings.Features.LongTermMemory; RelevantMemoryCheck.IsChecked = settings.Features.RelevantMemory; AutoImagesCheck.IsChecked = settings.Features.AutomaticImages; ProactiveCheck.IsChecked = settings.Proactive.Enabled; ProactiveImagesCheck.IsChecked = settings.Features.ProactiveImages;
             await SetImageAsync(AiPhoto, settings.ProfilePhoto); await SetImageAsync(BannerImage, settings.BannerPhoto); await LoadConversationAsync();
         }
-        catch (Exception ex) { ServerStatus.Text = ex.Message; }
+        catch (Exception ex) { ServerStatus.Text = FormatException("Unable to load AI", ex); }
     }
 
     private static void SelectCombo(ComboBox box, string? value) { foreach (var item in box.Items.OfType<ComboBoxItem>()) if (string.Equals(item.Tag?.ToString(), value ?? "", StringComparison.OrdinalIgnoreCase)) { box.SelectedItem = item; return; } if (box.Items.Count > 0) box.SelectedIndex = 0; }
@@ -63,9 +107,9 @@ public partial class MainWindow : Window
     private async void AiSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_changingAi || AiSelector.SelectedItem is not AiSummary ai || string.IsNullOrWhiteSpace(ai.AiId)) return;
-        try { _changingAi = true; await _api.SelectAiAsync(ai.AiId); await LoadCurrentAiAsync(); } catch (Exception ex) { ServerStatus.Text = ex.Message; } finally { _changingAi = false; }
+        try { _changingAi = true; await _api.SelectAiAsync(ai.AiId); await LoadCurrentAiAsync(); } catch (Exception ex) { ServerStatus.Text = FormatException("AI selection failed", ex); } finally { _changingAi = false; }
     }
-    private async void CreateAi_Click(object sender, RoutedEventArgs e) { try { await _api.CreateAiAsync(); await RefreshAisAsync(); await LoadCurrentAiAsync(); } catch (Exception ex) { ServerStatus.Text = ex.Message; } }
+    private async void CreateAi_Click(object sender, RoutedEventArgs e) { try { await _api.CreateAiAsync(); await RefreshAisAsync(); await LoadCurrentAiAsync(); } catch (Exception ex) { ServerStatus.Text = FormatException("Create AI failed", ex); } }
     private async void Logout_Click(object sender, RoutedEventArgs e) { try { await _api.LogoutAsync(); } catch { } Messages.Clear(); MainView.Visibility = Visibility.Collapsed; LoginView.Visibility = Visibility.Visible; LoginStatus.Text = "Logged out."; }
     private void Settings_Click(object sender, RoutedEventArgs e) => SettingsColumn.Width = SettingsColumn.Width.Value == 0 ? new GridLength(360) : new GridLength(0);
 
@@ -79,12 +123,12 @@ public partial class MainWindow : Window
             settings.Features.OnlineAi = OnlineAiCheck.IsChecked == true; settings.Features.Learning = LearningCheck.IsChecked == true; settings.Features.LongTermMemory = MemoryCheck.IsChecked == true; settings.Features.RelevantMemory = RelevantMemoryCheck.IsChecked == true; settings.Features.AutomaticImages = AutoImagesCheck.IsChecked == true; settings.Features.ProactiveImages = ProactiveImagesCheck.IsChecked == true; settings.Proactive.Enabled = ProactiveCheck.IsChecked == true;
             await _api.SaveSettingsAsync(settings); AiNameText.Text = string.IsNullOrWhiteSpace(settings.AiName) ? "AI" : settings.AiName; await RefreshAisAsync(); await SetImageAsync(BannerImage, settings.BannerPhoto); ServerStatus.Text = "Settings saved to AI-Server.";
         }
-        catch (Exception ex) { ServerStatus.Text = ex.Message; }
+        catch (Exception ex) { ServerStatus.Text = FormatException("Settings save failed", ex); }
     }
 
-    private async void ChangeProfilePhoto_Click(object sender, RoutedEventArgs e) { var dialog = ImageDialog(); if (dialog.ShowDialog() != true) return; try { var url = await _api.UploadProfilePhotoAsync(dialog.FileName); await SetImageAsync(AiPhoto, url); await RefreshAisAsync(); ServerStatus.Text = "Profile photo updated."; } catch (Exception ex) { ServerStatus.Text = ex.Message; } }
-    private async void ChangeAiPhoto_Click(object sender, RoutedEventArgs e) { var dialog = ImageDialog(); if (dialog.ShowDialog() != true) return; try { await _api.UploadAiPhotoAsync(dialog.FileName); ServerStatus.Text = "Private AI photo added to the server library."; } catch (Exception ex) { ServerStatus.Text = ex.Message; } }
-    private async void ChangeBanner_Click(object sender, RoutedEventArgs e) { var dialog = ImageDialog(); if (dialog.ShowDialog() != true) return; try { ServerStatus.Text = "Processing banner..."; var settings = await _api.GetSettingsAsync(); settings.BannerPhoto = await FileToDataUrlAsync(dialog.FileName); await _api.SaveSettingsAsync(settings); await SetImageAsync(BannerImage, settings.BannerPhoto); ServerStatus.Text = "Banner updated."; } catch (Exception ex) { ServerStatus.Text = ex.Message; } }
+    private async void ChangeProfilePhoto_Click(object sender, RoutedEventArgs e) { var dialog = ImageDialog(); if (dialog.ShowDialog() != true) return; try { var url = await _api.UploadProfilePhotoAsync(dialog.FileName); await SetImageAsync(AiPhoto, url); await RefreshAisAsync(); ServerStatus.Text = "Profile photo updated."; } catch (Exception ex) { ServerStatus.Text = FormatException("Profile photo failed", ex); } }
+    private async void ChangeAiPhoto_Click(object sender, RoutedEventArgs e) { var dialog = ImageDialog(); if (dialog.ShowDialog() != true) return; try { await _api.UploadAiPhotoAsync(dialog.FileName); ServerStatus.Text = "Private AI photo added to the server library."; } catch (Exception ex) { ServerStatus.Text = FormatException("AI photo failed", ex); } }
+    private async void ChangeBanner_Click(object sender, RoutedEventArgs e) { var dialog = ImageDialog(); if (dialog.ShowDialog() != true) return; try { ServerStatus.Text = "Processing banner..."; var settings = await _api.GetSettingsAsync(); settings.BannerPhoto = await FileToDataUrlAsync(dialog.FileName); await _api.SaveSettingsAsync(settings); await SetImageAsync(BannerImage, settings.BannerPhoto); ServerStatus.Text = "Banner updated."; } catch (Exception ex) { ServerStatus.Text = FormatException("Banner update failed", ex); } }
     private static OpenFileDialog ImageDialog() => new() { Filter = "Images|*.jpg;*.jpeg;*.png;*.webp;*.gif" };
 
     private static async Task<string> FileToDataUrlAsync(string path)
@@ -102,7 +146,7 @@ public partial class MainWindow : Window
         var message = MessageBox.Text.Trim(); if (string.IsNullOrWhiteSpace(message) && string.IsNullOrWhiteSpace(_attachedImage)) return; var image = _attachedImage; _attachedImage = null; MessageBox.Clear();
         Messages.Add(new ChatMessage { Role = "You", Text = message }); EmptyChatText.Visibility = Visibility.Collapsed; MessagesList.ScrollIntoView(Messages[Messages.Count - 1]);
         try { ServerStatus.Text = "AI is thinking..."; var response = await _api.ChatAsync(message, image); Messages.Add(new ChatMessage { Role = AiNameText.Text, Text = string.IsNullOrWhiteSpace(response.Reply) ? "No response returned." : response.Reply, Image = response.Image }); MessagesList.ScrollIntoView(Messages[Messages.Count - 1]); ServerStatus.Text = "Connected to AI-Server"; }
-        catch (Exception ex) { Messages.Add(new ChatMessage { Role = "System", Text = "Request failed: " + ex.Message }); MessagesList.ScrollIntoView(Messages[Messages.Count - 1]); ServerStatus.Text = "API error"; }
+        catch (Exception ex) { Messages.Add(new ChatMessage { Role = "System", Text = FormatException("Request failed", ex) }); MessagesList.ScrollIntoView(Messages[Messages.Count - 1]); ServerStatus.Text = "API error"; }
     }
 
     private async Task SetImageAsync(Image target, string? source)
