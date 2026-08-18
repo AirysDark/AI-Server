@@ -1,8 +1,8 @@
-"""Conversation archive API.
+"""Direct conversation archive API.
 
-current.json is the live working chat. conversations/*.json are archived chats.
-Opening an archived chat replaces current.json; starting a new chat archives
-current.json and then clears it.
+Archived conversations are the source of truth. There is no current.json
+working buffer for chat selection. Opening a chat reads that exact archive
+file and returns its contents directly to the client.
 """
 import json
 import os
@@ -30,11 +30,28 @@ def _title(data):
     return "New chat"
 
 
+def _normalise_record(record, conversation_id=None):
+    if not isinstance(record, dict):
+        return None
+    data = record.get("data") if isinstance(record.get("data"), dict) else record
+    if not isinstance(data, dict):
+        return None
+    data.setdefault("conversation", [])
+    return {
+        "conversation_id": conversation_id or record.get("conversation_id") or "",
+        "title": record.get("title") or data.get("title") or _title(data),
+        "created": record.get("created", data.get("created", 0)),
+        "updated": record.get("updated", data.get("updated", 0)),
+        "data": data,
+    }
+
+
 def _archive_current(uid, ai_id):
-    archive = conversations_root(uid, ai_id)
+    """Keep existing live conversation compatibility, but archive it as a chat."""
     data = load_conversation(uid, ai_id)
     if not data.get("conversation"):
         return None
+    archive = conversations_root(uid, ai_id)
     os.makedirs(archive, exist_ok=True)
     cid = "C-" + uuid.uuid4().hex[:16]
     now = time.time()
@@ -50,64 +67,50 @@ def list_chats(uid, ai_id):
     for name in os.listdir(archive):
         if not name.endswith(".json") or name == "current.json":
             continue
+        path = os.path.join(archive, name)
         try:
-            record = load_json(os.path.join(archive, name), {})
-            if isinstance(record, dict) and record.get("conversation_id") and isinstance(record.get("data"), dict):
+            record = _normalise_record(load_json(path, {}), os.path.splitext(name)[0])
+            if record and record["conversation_id"] and record["data"].get("conversation"):
                 result.append({k: record.get(k) for k in ("conversation_id", "title", "created", "updated")})
         except Exception:
             continue
-    current = load_conversation(uid, ai_id)
-    if current.get("conversation"):
-        result.append({"conversation_id": "current", "title": _title(current), "created": current.get("created", 0), "updated": current.get("updated", time.time()), "current": True})
     result.sort(key=lambda x: x.get("updated", 0) or 0, reverse=True)
     return result
 
 
 def new_chat(uid, ai_id):
-    _archive_current(uid, ai_id)
-    now = time.time()
-    save_conversation_data(uid, ai_id, {"conversation": [], "memory": {}, "proactive_state": {}, "created": now, "updated": now})
-    return {"ok": True, "conversation_id": "current"}
+    """Start a new live chat without using current.json as a selected-chat buffer."""
+    return {"ok": True, "conversation_id": "new"}
 
 
 def open_chat(uid, ai_id, conversation_id):
-    conversation_id = str(conversation_id or "").strip()
-    if not conversation_id:
+    """Return the selected archived conversation directly; never copy it to current.json."""
+    conversation_id = _safe(conversation_id)
+    if not conversation_id or conversation_id == "current":
         return None
-    if conversation_id == "current":
-        return load_conversation(uid, ai_id)
-    data = load_archived_conversation(uid, ai_id, conversation_id)
-    if data is None:
+    record = _normalise_record(load_archived_conversation(uid, ai_id, conversation_id), conversation_id)
+    if record is None:
+        path = os.path.join(conversations_root(uid, ai_id), conversation_id + ".json")
+        record = _normalise_record(load_json(path, None), conversation_id)
+    if record is None:
         return None
-    current = load_conversation(uid, ai_id)
-    if current.get("conversation"):
-        _archive_current(uid, ai_id)
-    data = dict(data)
-    data["updated"] = time.time()
-    save_conversation_data(uid, ai_id, data)
+    data = record["data"]
     return data
 
 
 def rename_chat(uid, ai_id, conversation_id, title):
     title = " ".join(str(title or "").strip().split())[:80]
-    if not title:
+    if not title or conversation_id in ("", "current", "new"):
         return False
-    if conversation_id == "current":
-        data = load_conversation(uid, ai_id)
-        if not data.get("conversation"):
-            return False
-        data["title"] = title
-        data["updated"] = time.time()
-        save_conversation_data(uid, ai_id, data)
-        return True
     path = os.path.join(conversations_root(uid, ai_id), _safe(conversation_id) + ".json")
     record = load_json(path, None)
-    if not isinstance(record, dict) or not isinstance(record.get("data"), dict):
+    if not isinstance(record, dict):
         return False
+    if isinstance(record.get("data"), dict):
+        record["data"]["title"] = title
+        record["data"]["updated"] = time.time()
     record["title"] = title
     record["updated"] = time.time()
-    record["data"]["title"] = title
-    record["data"]["updated"] = record["updated"]
     save_json(path, record)
     return True
 
@@ -151,7 +154,7 @@ def install_handler_routes(handler_class, server_module):
         result = open_chat(uid, ai_id, conversation_id)
         if result is None:
             return self.send_json({"ok": False, "error": "Conversation not found"}, uid, 404, ai_id)
-        return self.send_json({"ok": True, "conversation_id": conversation_id}, uid, 200, ai_id)
+        return self.send_json({"ok": True, "conversation_id": conversation_id, "conversation": result.get("conversation", []), "data": result}, uid, 200, ai_id)
 
     handler_class.do_GET = do_get
     handler_class.do_POST = do_post
