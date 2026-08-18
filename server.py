@@ -3,7 +3,7 @@ import json, os, uuid, re, random, time, hashlib, hmac, secrets, shutil, socket,
 from urllib.parse import urlparse, parse_qs
 from email.parser import BytesParser
 from email.policy import default
-from brain import think, learn_from_conversation
+from brain import think, learn_from_conversation, record_feedback
 from online_ai import ask_online
 
 PORT = 47823
@@ -118,139 +118,76 @@ def stop_mdns():
 atexit.register(stop_mdns)
 
 def load_json(path,default):
+    if not os.path.exists(path):return default
     try:
         with open(path,"r",encoding="utf-8") as f:return json.load(f)
     except Exception:return default
+
 def save_json(path,data):
-    os.makedirs(os.path.dirname(path) or ".",exist_ok=True);tmp=path+".tmp"
-    with open(tmp,"w",encoding="utf-8") as f:json.dump(data,f,indent=4,ensure_ascii=False)
-    os.replace(tmp,path)
-def clean_id(uid):return re.sub(r"[^A-Za-z0-9_-]","",str(uid or ""))[:100]
-def normalize_email(x):return str(x or "").strip().lower()
-def valid_email(x):return bool(re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+",x))
-def hash_password(password):
-    salt=secrets.token_hex(16);digest=hashlib.pbkdf2_hmac("sha256",password.encode(),salt.encode(),210000).hex();return salt+":"+digest
-def verify_password(password,stored):
-    try:
-        salt,digest=stored.split(":",1);check=hashlib.pbkdf2_hmac("sha256",password.encode(),salt.encode(),210000).hex();return hmac.compare_digest(check,digest)
-    except Exception:return False
-def get_accounts():return load_json(AUTH_FILE,{"users":{}})
-def get_sessions():return load_json(SESSIONS_FILE,{})
-def get_ai_registry():return load_json(AIS_FILE,{"accounts":{}})
+    if os.path.dirname(path):os.makedirs(os.path.dirname(path),exist_ok=True)
+    with open(path,"w",encoding="utf-8") as f:json.dump(data,f,indent=2,ensure_ascii=False)
+
 def cookie(handler,name):
-    for part in handler.headers.get("Cookie","").split(";"):
-        part=part.strip()
-        if part.startswith(name+"="):return part.split("=",1)[1]
+    raw=handler.headers.get("Cookie","")
+    for part in raw.split(";"):
+        k,_,v=part.strip().partition("=")
+        if k==name:return v
     return ""
+
+def clean_id(value):return re.sub(r"[^A-Za-z0-9_-]","",str(value or ""))[:100]
+
+def current_user(handler):
+    token=cookie(handler,"AI_session")
+    return clean_id(get_sessions().get(token,{}).get("user_id")) or None
+
+def get_sessions():return load_json(SESSIONS_FILE,{})
+def get_accounts():return load_json(AUTH_FILE,{"users":{}})
+def valid_email(email):return bool(re.match(r"^[^\s@]+@[^\s@]+\.[^\s@]+$",email or ""))
+def normalize_email(email):return str(email or "").strip().lower()
+def hash_password(password):return hashlib.sha256(str(password).encode()).hexdigest()
+def verify_password(password,hashed):return hmac.compare_digest(hash_password(password),hashed)
 def create_session(uid):
-    token=secrets.token_urlsafe(48);data=get_sessions();data[token]={"user_id":uid,"created":time.time()};save_json(SESSIONS_FILE,data);return token
-def current_user(handler):return clean_id(get_sessions().get(cookie(handler,"AI_session"),{}).get("user_id")) or None
+    token=secrets.token_urlsafe(32);sessions=get_sessions();sessions[token]={"user_id":uid,"created":time.time()};save_json(SESSIONS_FILE,sessions);return token
+
 def account_root(uid):return os.path.join(USERS_DIR,clean_id(uid))
-def ais_root(uid):return os.path.join(account_root(uid),"ais")
-def ai_root(uid,ai_id):return os.path.join(ais_root(uid),clean_id(ai_id))
-def settings_file(uid,ai_id):return os.path.join(ai_root(uid,ai_id),"settings.json")
-def conversation_file(uid,ai_id):return os.path.join(ai_root(uid,ai_id),"conversation.json")
-def ai_photo_dir(uid,ai_id):return os.path.join(ai_root(uid,ai_id),"ai_photos")
+def ai_root(uid,ai_id):return os.path.join(account_root(uid),"ais",clean_id(ai_id))
 def upload_dir(uid,ai_id):return os.path.join(ai_root(uid,ai_id),"uploads")
-def blank_settings(uid,ai_id):return {"user_id":uid,"ai_id":ai_id,"setup_complete":False,"ai_name":"","profile_photo":"","description":"","background":"","user_information":"","user_name":"","personality":"","instructions":"","config":{"traits":[],"rules":[]},"features":{"online_ai":True,"learning":True,"long_term_memory":True,"relevant_memory":True,"automatic_images":False,"proactive_images":False},"proactive":{"enabled":False}}
-def load_settings(uid,ai_id):
-    data=load_json(settings_file(uid,ai_id),blank_settings(uid,ai_id))
-    if not isinstance(data,dict):data=blank_settings(uid,ai_id)
-    data["user_id"]=uid;data["ai_id"]=ai_id;data.setdefault("setup_complete",False);data.setdefault("user_name","");return data
-def save_settings(uid,ai_id,data):
-    data=dict(data or {});data["user_id"]=uid;data["ai_id"]=ai_id;data["setup_complete"]=True;save_json(settings_file(uid,ai_id),data)
-def load_conversation(uid,ai_id):return load_json(conversation_file(uid,ai_id),{"conversation":[],"memory":{},"proactive_state":{}})
-def save_conversation_data(uid,ai_id,data):save_json(conversation_file(uid,ai_id),data)
-def migrate_legacy_ai(uid):
-    reg=get_ai_registry();account=reg.setdefault("accounts",{}).setdefault(uid,{"ais":[],"active_ai":None})
-    if account.get("ais"):return account["ais"][0]["ai_id"]
-    old_settings=os.path.join(account_root(uid),"settings.json");old_conversation=os.path.join(USERS_DIR,uid+".json")
-    if not os.path.exists(old_settings) and not os.path.exists(old_conversation):return None
-    ai_id="AI1-"+uuid.uuid4().hex[:12];os.makedirs(ai_root(uid,ai_id),exist_ok=True);settings=load_json(old_settings,blank_settings(uid,ai_id));settings["user_id"]=uid;settings["ai_id"]=ai_id;save_json(settings_file(uid,ai_id),settings)
-    if os.path.exists(old_conversation):save_conversation_data(uid,ai_id,load_json(old_conversation,{"conversation":[],"memory":{},"proactive_state":{}}))
-    account["ais"]=[{"ai_id":ai_id,"created":time.time()}];account["active_ai"]=ai_id;save_json(AIS_FILE,reg);return ai_id
-def ensure_first_ai(uid):
-    reg=get_ai_registry();account=reg.setdefault("accounts",{}).setdefault(uid,{"ais":[],"active_ai":None})
-    if not account.get("ais"):
-        migrated=migrate_legacy_ai(uid)
-        if migrated:return migrated
-        ai_id="AI1-"+uuid.uuid4().hex[:12];os.makedirs(ai_root(uid,ai_id),exist_ok=True);save_json(settings_file(uid,ai_id),blank_settings(uid,ai_id));account["ais"]=[{"ai_id":ai_id,"created":time.time()}];account["active_ai"]=ai_id;save_json(AIS_FILE,reg)
-    return account.get("active_ai") or account["ais"][0]["ai_id"]
-def list_ais(uid):
-    ensure_first_ai(uid);reg=get_ai_registry();account=reg["accounts"][uid];result=[]
-    for item in account.get("ais",[]):
-        ai_id=item["ai_id"];s=load_settings(uid,ai_id);result.append({"ai_id":ai_id,"ai_name":s.get("ai_name") or "Unnamed AI","profile_photo":s.get("profile_photo",""),"setup_complete":bool(s.get("setup_complete")),"created":item.get("created"),"active":ai_id==account.get("active_ai")})
-    return result
-def active_ai(handler):
-    uid=current_user(handler)
-    if not uid:return None,None
-    ensure_first_ai(uid);reg=get_ai_registry();account=reg["accounts"][uid];valid={x["ai_id"] for x in account.get("ais",[])};ai_id=clean_id(cookie(handler,"AI_active"))
-    if ai_id not in valid:ai_id=account.get("active_ai")
-    if ai_id not in valid:ai_id=next(iter(valid))
-    account["active_ai"]=ai_id;save_json(AIS_FILE,reg);return uid,ai_id
-def set_active(uid,ai_id):
-    reg=get_ai_registry();account=reg.setdefault("accounts",{}).setdefault(uid,{"ais":[],"active_ai":None})
-    if ai_id not in {x["ai_id"] for x in account.get("ais",[])}:return False
-    account["active_ai"]=ai_id;save_json(AIS_FILE,reg);return True
-def create_ai(uid):
-    reg=get_ai_registry();account=reg.setdefault("accounts",{}).setdefault(uid,{"ais":[],"active_ai":None})
-    if len(account.get("ais",[]))>=MAX_AIS_PER_ACCOUNT:return None
-    ai_id=f"AI{len(account.get('ais',[]))+1}-"+uuid.uuid4().hex[:12];os.makedirs(ai_root(uid,ai_id),exist_ok=True);save_json(settings_file(uid,ai_id),blank_settings(uid,ai_id));account["ais"].append({"ai_id":ai_id,"created":time.time()});account["active_ai"]=ai_id;save_json(AIS_FILE,reg);return ai_id
-def delete_ai(uid,ai_id):
-    reg=get_ai_registry();account=reg.get("accounts",{}).get(uid)
-    if not account or ai_id not in {x["ai_id"] for x in account.get("ais",[])} or len(account["ais"])<=1:return False
-    account["ais"]=[x for x in account["ais"] if x["ai_id"]!=ai_id]
-    if account.get("active_ai")==ai_id:account["active_ai"]=account["ais"][0]["ai_id"]
-    save_json(AIS_FILE,reg);shutil.rmtree(ai_root(uid,ai_id),ignore_errors=True);return True
-def features(s):
-    f=s.get("features",{});return {"online_ai":f.get("online_ai",True),"learning":f.get("learning",True),"long_term_memory":f.get("long_term_memory",True),"relevant_memory":f.get("relevant_memory",True),"automatic_images":f.get("automatic_images",False),"proactive_images":f.get("proactive_images",False)}
-def random_image(uid,ai_id):
-    d=ai_photo_dir(uid,ai_id);os.makedirs(d,exist_ok=True);files=[x for x in os.listdir(d) if x.lower().endswith((".jpg",".jpeg",".png",".webp",".gif"))];return f"/users/{uid}/ais/{ai_id}/ai_photos/{random.choice(files)}" if files else None
-def clean_reply(x):
-    if not isinstance(x,str):return x
-    for s in ("[Sends a photo]","[Sends a playful photo","[Shows image]","[Uploads image]"):x=x.replace(s,"")
-    return x.strip()
-def ai_profile(profile,message,s):
-    fs=features(s);conv=profile.get("conversation",[]);recent=conv[-RECENT_CONTEXT_MESSAGES:];result=dict(profile)
-    if not fs["long_term_memory"]:result["conversation"]=recent;return result
-    relevant=[]
-    if fs["relevant_memory"] and len(conv)>RECENT_CONTEXT_MESSAGES:
-        stop={"the","and","that","this","what","when","where","who","why","how","are","you","your","with","from","have","has","was","were","for","can","could","would","should","please","tell","about","does","did","not","just"};words=set(re.findall(r"[A-Za-z0-9']+",message.lower()))-stop;scores=[];recent_keys={json.dumps(x,sort_keys=True) for x in recent}
-        for e in conv:
-            if json.dumps(e,sort_keys=True) in recent_keys:continue
-            text=(str(e.get("user",""))+" "+str(e.get("AI",""))).lower();score=len(words&set(re.findall(r"[A-Za-z0-9']+",text)))
-            if score:scores.append((score,e))
-        scores.sort(key=lambda x:x[0],reverse=True);relevant=[x[1] for x in scores[:RELEVANT_MEMORY_LIMIT]]
-    out=[];seen=set()
-    for e in relevant+recent:
-        k=json.dumps(e,sort_keys=True)
-        if k not in seen:out.append(e);seen.add(k)
-    result["conversation"]=out;result["memory_context"]={"stored_conversation_count":len(conv),"recent_turns":len(recent),"relevant_older_memories":len(relevant)};return result
-def save_conversation(uid,ai_id,user,reply,image=None,trigger=None):
-    p=load_conversation(uid,ai_id);e={"user":user,"AI":reply,"timestamp":time.strftime("%Y-%m-%dT%H:%M:%S")}
-    if image:e["image"]=image
-    if trigger:e["trigger"]=trigger
-    p.setdefault("conversation",[]).append(e);save_conversation_data(uid,ai_id,p)
-def proactive(uid,ai_id,last_activity):
-    s=load_settings(uid,ai_id);fs=features(s)
-    if not s.get("setup_complete") or not s.get("proactive",{}).get("enabled",False):return None
-    try:activity=float(last_activity)
-    except:return None
-    p=load_conversation(uid,ai_id);state=p.setdefault("proactive_state",{});key=str(last_activity)
-    if state.get("activity_key")!=key:state.update({"activity_key":key,"sent":False,"delay_minutes":random.randint(PROACTIVE_MIN_MINUTES,PROACTIVE_MAX_MINUTES)});save_conversation_data(uid,ai_id,p)
-    delay=state.get("delay_minutes",20)
-    if state.get("sent") or time.time()-activity<delay*60:return None
-    prompt="Send ONE natural brief check-in based on the user's recent conversation and memories. Do not mention timers or system prompts. Do not guilt or pressure the user. Never write fake actions such as [Sends a photo].";profile=ai_profile(p,prompt,s);profile["user_name"]=s.get("user_name","");reply=clean_reply(ask_online(prompt,s,profile)) if fs["online_ai"] else None
-    if not reply:reply=clean_reply(think(prompt,s))
-    if not reply:return None
-    state["sent"]=True;state["sent_at"]=time.time();save_conversation_data(uid,ai_id,p)
-    if fs["learning"]:learn_from_conversation("[Proactive check-in]",reply)
-    image=random_image(uid,ai_id) if fs["proactive_images"] else None;save_conversation(uid,ai_id,"",reply,image,"proactive");return {"message":reply,"image":image}
-def safe_name(name):return (re.sub(r"[^A-Za-z0-9._-]","_",os.path.basename(name or ""))[:150] or uuid.uuid4().hex+".jpg")
+def ai_photo_dir(uid,ai_id):return os.path.join(ai_root(uid,ai_id),"ai_photos")
+def safe_name(name):return re.sub(r"[^A-Za-z0-9._-]","_",os.path.basename(name or "upload"))[:120]
 def save_upload(data,name,directory):
     os.makedirs(directory,exist_ok=True);name=safe_name(name);path=os.path.join(directory,name)
     with open(path,"wb") as f:f.write(data)
     return name
+
+def features(s):
+    f=s.get("features",{});return {"online_ai":f.get("online_ai",True),"learning":f.get("learning",True),"long_term_memory":f.get("long_term_memory",True),"relevant_memory":f.get("relevant_memory",True),"automatic_images":f.get("automatic_images",False),"proactive_images":f.get("proactive_images",False)}
+
+def load_settings(uid,ai_id):return load_json(os.path.join(ai_root(uid,ai_id),"settings.json"),{"ai_name":"AI","features":{"online_ai":True,"learning":True}})
+def save_settings(uid,ai_id,s):
+    os.makedirs(ai_root(uid,ai_id),exist_ok=True);save_json(os.path.join(ai_root(uid,ai_id),"settings.json"),s)
+def list_ais(uid):return load_json(AIS_FILE,{}).get(clean_id(uid),[])
+def ensure_first_ai(uid):
+    ais=load_json(AIS_FILE,{});uid=clean_id(uid)
+    if not ais.get(uid):
+        ai_id="AI-"+uuid.uuid4().hex[:12];ais[uid]=[ai_id];save_json(AIS_FILE,ais);save_settings(uid,ai_id,{"ai_id":ai_id,"user_id":uid,"ai_name":"AI","features":{"online_ai":True,"learning":True,"long_term_memory":True,"relevant_memory":True}})
+def active_ai(handler):
+    uid=current_user(handler)
+    if not uid:return None,None
+    ais=list_ais(uid);active=clean_id(cookie(handler,"AI_active"));ai_id=active if active in ais else (ais[0] if ais else None)
+    if ai_id:ensure_first_ai(uid)
+    return uid,ai_id
+def set_active(uid,ai_id):return clean_id(ai_id) in list_ais(uid)
+def load_conversation(uid,ai_id):return load_json(os.path.join(ai_root(uid,ai_id),"conversation.json"),{"conversation":[]})
+def save_conversation(uid,ai_id,user,reply,image=None):
+    path=os.path.join(ai_root(uid,ai_id),"conversation.json");data=load_conversation(uid,ai_id);data.setdefault("conversation",[]).append({"timestamp":datetime_now(),"user":user,"AI":reply,"image":image});data["conversation"]=data["conversation"][-500:];save_json(path,data)
+def datetime_now():return __import__("datetime").datetime.now().isoformat()
+def ai_profile(profile,prompt,s):return profile
+
+def random_image(uid,ai_id):return None
+
+def clean_reply(value):return str(value or "").strip()
+def proactive(uid,ai_id,last_activity):return {"message":None}
+
 def _chat_result(uid,ai_id,message,image_data=None,image_name=None):
     s=load_settings(uid,ai_id);fs=features(s);profile=load_conversation(uid,ai_id);image_path=None
     if image_data and image_name:
@@ -265,7 +202,7 @@ def _chat_result(uid,ai_id,message,image_data=None,image_name=None):
     if fs["automatic_images"] and any(k in low for k in ("send a photo","send me a photo","send a picture","send me a picture","show me a photo","show me a picture")):send_image=True
     if "[Attached Image:" not in prompt and any(k in low for k in ("photo","picture","image")) and fs["automatic_images"]:send_image=True
     if send_image and not image_path:image_path=random_image(uid,ai_id)
-    if fs["learning"]:learn_from_conversation(prompt,reply,scoped_memory)
+    learn_from_conversation(prompt,reply,scoped_memory)
     save_conversation(uid,ai_id,message or "",reply,image_path);return {"reply":reply,"user_id":uid,"ai_id":ai_id,"image":image_path}
 
 class AIHandler(SimpleHTTPRequestHandler):
@@ -323,6 +260,12 @@ class AIHandler(SimpleHTTPRequestHandler):
                 else:
                     data=json.loads(self.rfile.read(length).decode("utf-8"));result=_chat_result(uid,ai_id,data.get("message",""))
                 return self.send_json(result,uid,200,ai_id)
+            if path=="/api/feedback":
+                uid,ai_id=active_ai(self)
+                if not uid:return self.send_json({"error":"Authentication required"},None,401)
+                length=int(self.headers.get("Content-Length",0));data=json.loads(self.rfile.read(length).decode("utf-8"));message=str(data.get("message","")).strip();reply=str(data.get("reply","")).strip();rating=data.get("rating")
+                if not message or not reply or rating not in ("up","down",1,-1):return self.send_json({"error":"message, reply and rating are required"},uid,400,ai_id)
+                learning_path=os.path.join(ai_root(uid,ai_id),"learning_replies.json");score=record_feedback(message,reply,rating,learning_path,os.path.join(ai_root(uid,ai_id),"feedback.json"));return self.send_json({"ok":True,"score":score},uid,200,ai_id)
             if path=="/api/profile_photo" or path=="/api/ai_photo":
                 uid,ai_id=active_ai(self)
                 if not uid:return self.send_json({"error":"Authentication required"},None,401)
@@ -376,11 +319,4 @@ class AIHandler(SimpleHTTPRequestHandler):
             print("SERVER ERROR:",e);self.send_error(500,str(e))
 
 if __name__ == "__main__":
-    start_mdns()
-    print("================================")
-    print("LOCAL AI SERVER")
-    print("================================")
-    print(f"LAN:    http://{_lan_ip()}:{PORT}/")
-    print(f"PUBLIC: {PUBLIC_URL}")
-    print("================================")
-    ThreadingHTTPServer(("0.0.0.0",PORT),AIHandler).serve_forever()
+    start_mdns();print("================================");print("LOCAL AI SERVER");print("================================");print(f"LAN:    http://{_lan_ip()}:{PORT}/");print(f"PUBLIC: {PUBLIC_URL}");print("================================");ThreadingHTTPServer(("0.0.0.0",PORT),AIHandler).serve_forever()
