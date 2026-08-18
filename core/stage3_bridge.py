@@ -1,7 +1,7 @@
 """Compatibility bridge for extracted storage, auth and AI modules."""
 from core import server_impl
 from core.auth import clean_id, normalize_email, valid_email, hash_password, verify_password, get_accounts, get_sessions, cookie, create_session, current_user
-from core.ai_manager import (get_ai_registry, account_root, ais_root, ai_root, settings_file, conversation_file, ai_photo_dir, upload_dir, blank_settings, load_settings, save_settings, load_conversation, save_conversation_data, migrate_legacy_ai, ensure_first_ai, list_ais, active_ai, set_active, create_ai, delete_ai)
+from core.ai_manager import (get_ai_registry, account_root, ais_root, ai_root, settings_file, conversations_root, conversation_file, legacy_conversation_file, blank_settings, load_settings, save_settings, load_conversation, save_conversation_data, migrate_legacy_ai, ensure_first_ai, list_ais, active_ai, set_active, create_ai, delete_ai)
 from core.config import (PORT, PUBLIC_HOSTNAME, PUBLIC_URL, RECENT_CONTEXT_MESSAGES, RELEVANT_MEMORY_LIMIT, PROACTIVE_MIN_MINUTES, PROACTIVE_MAX_MINUTES, MAX_AIS_PER_ACCOUNT, BASE_DIR, USERS_DIR, AUTH_FILE, SESSIONS_FILE, AIS_FILE)
 from core.storage import load_json, save_json
 
@@ -12,6 +12,6 @@ def apply():
         setattr(module, name, value)
     for name, value in {"load_json": load_json, "save_json": save_json, "clean_id": clean_id, "normalize_email": normalize_email, "valid_email": valid_email, "hash_password": hash_password, "verify_password": verify_password, "get_accounts": get_accounts, "get_sessions": get_sessions, "cookie": cookie, "create_session": create_session, "current_user": current_user}.items():
         setattr(module, name, value)
-    for name, value in {"get_ai_registry": get_ai_registry, "account_root": account_root, "ais_root": ais_root, "ai_root": ai_root, "settings_file": settings_file, "conversation_file": conversation_file, "ai_photo_dir": ai_photo_dir, "upload_dir": upload_dir, "blank_settings": blank_settings, "load_settings": load_settings, "save_settings": save_settings, "load_conversation": load_conversation, "save_conversation_data": save_conversation_data, "migrate_legacy_ai": migrate_legacy_ai, "ensure_first_ai": ensure_first_ai, "list_ais": list_ais, "active_ai": active_ai, "set_active": set_active, "create_ai": create_ai, "delete_ai": delete_ai}.items():
+    for name, value in {"get_ai_registry": get_ai_registry, "account_root": account_root, "ais_root": ais_root, "ai_root": ai_root, "settings_file": settings_file, "conversations_root": conversations_root, "conversation_file": conversation_file, "legacy_conversation_file": legacy_conversation_file, "blank_settings": blank_settings, "load_settings": load_settings, "save_settings": save_settings, "load_conversation": load_conversation, "save_conversation_data": save_conversation_data, "migrate_legacy_ai": migrate_legacy_ai, "ensure_first_ai": ensure_first_ai, "list_ais": list_ais, "active_ai": active_ai, "set_active": set_active, "create_ai": create_ai, "delete_ai": delete_ai}.items():
         setattr(module, name, value)
     return module
