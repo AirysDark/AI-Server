@@ -29,7 +29,17 @@ def settings_file(uid, ai_id):
     return os.path.join(ai_root(uid, ai_id), "settings.json")
 
 
+def conversations_root(uid, ai_id):
+    return os.path.join(ai_root(uid, ai_id), "conversations")
+
+
 def conversation_file(uid, ai_id):
+    """Authoritative current conversation file inside the conversations directory."""
+    return os.path.join(conversations_root(uid, ai_id), "current.json")
+
+
+def legacy_conversation_file(uid, ai_id):
+    """Old location retained only for backwards-compatible migration."""
     return os.path.join(ai_root(uid, ai_id), "conversation.json")
 
 
@@ -43,25 +53,15 @@ def upload_dir(uid, ai_id):
 
 def blank_settings(uid, ai_id):
     return {
-        "user_id": uid,
-        "ai_id": ai_id,
-        "setup_complete": False,
-        "ai_name": "",
-        "profile_photo": "",
-        "description": "",
-        "background": "",
-        "user_information": "",
-        "user_name": "",
-        "personality": "",
-        "instructions": "",
+        "user_id": uid, "ai_id": ai_id, "setup_complete": False,
+        "ai_name": "", "profile_photo": "", "description": "",
+        "background": "", "user_information": "", "user_name": "",
+        "personality": "", "instructions": "",
         "config": {"traits": [], "rules": []},
         "features": {
-            "online_ai": True,
-            "learning": True,
-            "long_term_memory": True,
-            "relevant_memory": True,
-            "automatic_images": False,
-            "proactive_images": False,
+            "online_ai": True, "learning": True,
+            "long_term_memory": True, "relevant_memory": True,
+            "automatic_images": False, "proactive_images": False,
         },
         "proactive": {"enabled": False},
     }
@@ -87,29 +87,39 @@ def save_settings(uid, ai_id, data):
 
 
 def load_conversation(uid, ai_id):
-    return load_json(
-        conversation_file(uid, ai_id),
-        {"conversation": [], "memory": {}, "proactive_state": {}},
-    )
+    """Read the current conversation from <AI>/conversations/current.json.
+
+    If the old conversation.json exists and current.json does not, migrate it
+    into the new authoritative location without deleting the old file.
+    """
+    path = conversation_file(uid, ai_id)
+    default = {"conversation": [], "memory": {}, "proactive_state": {}}
+    if os.path.exists(path):
+        data = load_json(path, default)
+        return data if isinstance(data, dict) else default
+    legacy = legacy_conversation_file(uid, ai_id)
+    if os.path.exists(legacy):
+        data = load_json(legacy, default)
+        if isinstance(data, dict):
+            save_json(path, data)
+            return data
+    return default
 
 
 def save_conversation_data(uid, ai_id, data):
+    """Persist all conversation state exclusively in the conversations directory."""
     save_json(conversation_file(uid, ai_id), data)
 
 
 def migrate_legacy_ai(uid):
     reg = get_ai_registry()
-    account = reg.setdefault("accounts", {}).setdefault(
-        uid, {"ais": [], "active_ai": None}
-    )
+    account = reg.setdefault("accounts", {}).setdefault(uid, {"ais": [], "active_ai": None})
     if account.get("ais"):
         return account["ais"][0]["ai_id"]
-
     old_settings = os.path.join(account_root(uid), "settings.json")
     old_conversation = os.path.join(USERS_DIR, uid + ".json")
     if not os.path.exists(old_settings) and not os.path.exists(old_conversation):
         return None
-
     ai_id = "AI1-" + uuid.uuid4().hex[:12]
     os.makedirs(ai_root(uid, ai_id), exist_ok=True)
     settings = load_json(old_settings, blank_settings(uid, ai_id))
@@ -117,14 +127,7 @@ def migrate_legacy_ai(uid):
     settings["ai_id"] = ai_id
     save_json(settings_file(uid, ai_id), settings)
     if os.path.exists(old_conversation):
-        save_conversation_data(
-            uid,
-            ai_id,
-            load_json(
-                old_conversation,
-                {"conversation": [], "memory": {}, "proactive_state": {}},
-            ),
-        )
+        save_conversation_data(uid, ai_id, load_json(old_conversation, {"conversation": [], "memory": {}, "proactive_state": {}}))
     account["ais"] = [{"ai_id": ai_id, "created": time.time()}]
     account["active_ai"] = ai_id
     save_json(AIS_FILE, reg)
@@ -133,9 +136,7 @@ def migrate_legacy_ai(uid):
 
 def ensure_first_ai(uid):
     reg = get_ai_registry()
-    account = reg.setdefault("accounts", {}).setdefault(
-        uid, {"ais": [], "active_ai": None}
-    )
+    account = reg.setdefault("accounts", {}).setdefault(uid, {"ais": [], "active_ai": None})
     if not account.get("ais"):
         migrated = migrate_legacy_ai(uid)
         if migrated:
@@ -151,22 +152,12 @@ def ensure_first_ai(uid):
 
 def list_ais(uid):
     ensure_first_ai(uid)
-    reg = get_ai_registry()
-    account = reg["accounts"][uid]
+    account = get_ai_registry()["accounts"][uid]
     result = []
     for item in account.get("ais", []):
         ai_id = item["ai_id"]
         settings = load_settings(uid, ai_id)
-        result.append(
-            {
-                "ai_id": ai_id,
-                "ai_name": settings.get("ai_name") or "Unnamed AI",
-                "profile_photo": settings.get("profile_photo", ""),
-                "setup_complete": bool(settings.get("setup_complete")),
-                "created": item.get("created"),
-                "active": ai_id == account.get("active_ai"),
-            }
-        )
+        result.append({"ai_id": ai_id, "ai_name": settings.get("ai_name") or "Unnamed AI", "profile_photo": settings.get("profile_photo", ""), "setup_complete": bool(settings.get("setup_complete")), "created": item.get("created"), "active": ai_id == account.get("active_ai")})
     return result
 
 
@@ -190,9 +181,7 @@ def active_ai(handler):
 
 def set_active(uid, ai_id):
     reg = get_ai_registry()
-    account = reg.setdefault("accounts", {}).setdefault(
-        uid, {"ais": [], "active_ai": None}
-    )
+    account = reg.setdefault("accounts", {}).setdefault(uid, {"ais": [], "active_ai": None})
     if ai_id not in {x["ai_id"] for x in account.get("ais", [])}:
         return False
     account["active_ai"] = ai_id
@@ -202,9 +191,7 @@ def set_active(uid, ai_id):
 
 def create_ai(uid):
     reg = get_ai_registry()
-    account = reg.setdefault("accounts", {}).setdefault(
-        uid, {"ais": [], "active_ai": None}
-    )
+    account = reg.setdefault("accounts", {}).setdefault(uid, {"ais": [], "active_ai": None})
     if len(account.get("ais", [])) >= MAX_AIS_PER_ACCOUNT:
         return None
     ai_id = f"AI{len(account.get('ais', [])) + 1}-" + uuid.uuid4().hex[:12]
@@ -219,11 +206,7 @@ def create_ai(uid):
 def delete_ai(uid, ai_id):
     reg = get_ai_registry()
     account = reg.get("accounts", {}).get(uid)
-    if (
-        not account
-        or ai_id not in {x["ai_id"] for x in account.get("ais", [])}
-        or len(account["ais"]) <= 1
-    ):
+    if not account or ai_id not in {x["ai_id"] for x in account.get("ais", [])} or len(account["ais"]) <= 1:
         return False
     account["ais"] = [x for x in account["ais"] if x["ai_id"] != ai_id]
     if account.get("active_ai") == ai_id:
