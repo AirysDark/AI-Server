@@ -13,7 +13,7 @@ using System.Threading.Tasks;
 
 namespace AIServerWindows;
 
-public sealed class ApiClient(string? baseUrl = null)
+public sealed class ApiClient
 {
     public const string DefaultBaseUrl = "https://ai-server.ddns.net";
 
@@ -23,14 +23,20 @@ public sealed class ApiClient(string? baseUrl = null)
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
     };
 
-    private readonly CookieContainer _cookies = new();
+    private readonly CookieContainer _cookies;
+    private readonly HttpClient _http;
 
-    public string BaseUrl { get; } = (baseUrl ?? DefaultBaseUrl).TrimEnd('/');
+    public string BaseUrl { get; }
     public bool IsAuthenticated { get; private set; }
     public string? UserId { get; private set; }
     public string? ActiveAiId { get; set; }
 
-    private readonly HttpClient _http = CreateHttpClient(_cookies, BaseUrl);
+    public ApiClient(string? baseUrl = null)
+    {
+        BaseUrl = (baseUrl ?? DefaultBaseUrl).TrimEnd('/');
+        _cookies = new CookieContainer();
+        _http = CreateHttpClient(_cookies, BaseUrl);
+    }
 
     private static HttpClient CreateHttpClient(CookieContainer cookies, string baseUrl)
     {
