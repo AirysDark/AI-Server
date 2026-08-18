@@ -14,7 +14,7 @@ public partial class MainWindow
         }
 
         var name = string.IsNullOrWhiteSpace(ai.AiName) ? "this AI" : $"\"{ai.AiName}\"";
-        var answer = MessageBox.Show(
+        var answer = System.Windows.MessageBox.Show(
             $"Delete {name}?\n\nThis permanently removes the AI and its server-side data. This cannot be undone.",
             "Delete AI",
             MessageBoxButton.YesNo,
