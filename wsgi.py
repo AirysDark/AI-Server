@@ -18,6 +18,7 @@ from server import AIHandler  # noqa: E402
 from core.auth import current_user, get_accounts, hash_password, normalize_email, valid_email, create_session  # noqa: E402
 from core.ai_manager import active_ai, ensure_first_ai, list_ais  # noqa: E402
 from core.storage import save_json  # noqa: E402
+from core.config import AUTH_FILE  # noqa: E402
 import chats_api  # noqa: E402
 from reset_auth import request_reset, reset_password  # noqa: E402
 
@@ -91,7 +92,7 @@ def _auth_route(environ, start_response, method, path, body):
             "username": str(data.get("username", "")).strip()[:60],
             "password": hash_password(password),
         }
-        save_json(os.path.join(PROJECT_DIR, "accounts.json"), accounts)
+        save_json(AUTH_FILE, accounts)
         ensure_first_ai(uid)
         session = create_session(uid)
         headers = [
