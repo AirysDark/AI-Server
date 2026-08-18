@@ -5,10 +5,18 @@ import re
 from datetime import datetime
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MEMORY_FILE = os.path.join(BASE_DIR, "memory.json")
-LEARNING_FILE = os.path.join(BASE_DIR, "learning", "replies.json")
-TRAINING_FILE = os.path.join(BASE_DIR, "learning", "training.json")
-FEEDBACK_FILE = os.path.join(BASE_DIR, "learning", "feedback.json")
+# Import the central storage location so learning follows AI-Server-Storage.
+try:
+    from core.config import STORAGE_DIR, USERS_DIR, LEARNING_DIR
+except Exception:
+    STORAGE_DIR = BASE_DIR
+    USERS_DIR = os.path.join(BASE_DIR, "users")
+    LEARNING_DIR = os.path.join(BASE_DIR, "learning")
+
+MEMORY_FILE = os.path.join(STORAGE_DIR, "memory.json")
+LEARNING_FILE = os.path.join(LEARNING_DIR, "replies.json")
+TRAINING_FILE = os.path.join(LEARNING_DIR, "training.json")
+FEEDBACK_FILE = os.path.join(LEARNING_DIR, "feedback.json")
 FAKE_AI_UPGRADE_NOTICE = "For full AI add Hugging Face token."
 
 
@@ -45,7 +53,7 @@ def learn_online_response(user, reply, settings=None):
     settings = settings or {}; uid = str(settings.get("user_id", "")).strip(); ai_id = str(settings.get("ai_id", "")).strip()
     if not uid or not ai_id: return
     safe_uid = re.sub(r"[^A-Za-z0-9_-]", "", uid)[:100]; safe_ai = re.sub(r"[^A-Za-z0-9_-]", "", ai_id)[:100]
-    learn_from_conversation(user, reply, os.path.join(BASE_DIR, "users", safe_uid, "ais", safe_ai, "brain_memory.json"))
+    learn_from_conversation(user, reply, os.path.join(USERS_DIR, safe_uid, "ais", safe_ai, "brain_memory.json"))
 
 
 def learn_reply(trigger, reply, learning_path=None):
@@ -72,7 +80,7 @@ def process_feedback_queue(settings, learning_path=None):
     uid = str(settings.get("user_id", "")).strip(); ai_id = str(settings.get("ai_id", "")).strip()
     if uid and ai_id:
         safe_uid = re.sub(r"[^A-Za-z0-9_-]", "", uid)[:100]; safe_ai = re.sub(r"[^A-Za-z0-9_-]", "", ai_id)[:100]
-        save_json(os.path.join(BASE_DIR, "users", safe_uid, "ais", safe_ai, "settings.json"), settings)
+        save_json(os.path.join(USERS_DIR, safe_uid, "ais", safe_ai, "settings.json"), settings)
 
 
 def find_reply(message, learning_path=None):
