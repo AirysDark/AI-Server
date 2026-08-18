@@ -198,8 +198,18 @@ def active_ai(handler):
     uid = current_user(handler)
     if not uid:
         return None, None
+
     reg = get_ai_registry()
     account = reg.get("accounts", {}).get(uid, {})
+    known_ai_ids = {item.get("ai_id") for item in account.get("ais", [])}
+
+    # Prefer the AI currently selected by the browser, but only when it
+    # belongs to the authenticated account. This keeps conversation loading
+    # and saving pointed at the same per-AI directory.
+    selected_ai = clean_id(cookie(handler, "AI_active"))
+    if selected_ai in known_ai_ids:
+        return uid, selected_ai
+
     ai_id = account.get("active_ai") or (account.get("ais") or [{}])[0].get("ai_id")
     return uid, ai_id
 
