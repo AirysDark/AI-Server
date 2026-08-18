@@ -26,8 +26,7 @@ def save_json(path, data):
 
 def default_memory(): return {"profile": {}, "facts": {}, "preferences": {}, "personality": {}, "conversations": [], "learning_mode": True}
 
-def remember(memory, category, key, value):
-    memory.setdefault(category, {})[key.lower().strip()] = str(value).strip()
+def remember(memory, category, key, value): memory.setdefault(category, {})[key.lower().strip()] = str(value).strip()
 
 
 def learn_from_conversation(user, reply, memory_path=None):
@@ -61,6 +60,17 @@ def record_feedback(trigger, reply, rating, learning_path=None, feedback_path=No
     feedback = load_json(feedback_path or FEEDBACK_FILE, []); feedback.append({"time": datetime.now().isoformat(), "trigger": trigger, "reply": reply, "rating": rating}); save_json(feedback_path or FEEDBACK_FILE, feedback[-2000:]); return item["score"]
 
 
+def process_feedback_queue(settings, learning_path=None):
+    queue = settings.get("_feedback_queue", []) if isinstance(settings, dict) else []
+    if not isinstance(queue, list) or not queue: return
+    for item in queue[-100:]:
+        if not isinstance(item, dict): continue
+        message = str(item.get("message", "")).strip(); reply = str(item.get("reply", "")).strip(); rating = item.get("rating")
+        if message and reply and rating in ("up", "down", 1, -1): record_feedback(message, reply, rating, learning_path)
+    try: settings["_feedback_queue"] = []
+    except Exception: pass
+
+
 def find_reply(message, learning_path=None):
     data = load_json(learning_path or LEARNING_FILE, {})
     for key, item in data.items():
@@ -81,6 +91,8 @@ def fake_reply(text):
 
 
 def think(message, settings=None, memory_path=None, learning_path=None):
+    settings = settings if isinstance(settings, dict) else {}
+    process_feedback_queue(settings, learning_path)
     memory = load_json(memory_path or MEMORY_FILE, default_memory()); text = str(message).strip(); lower = text.lower()
     if lower == "/learn":
         memory["learning_mode"] = True; save_json(memory_path or MEMORY_FILE, memory); reply = fake_reply("Learning mode enabled."); learn_from_conversation(text, reply, memory_path); return reply
