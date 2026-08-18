@@ -3,6 +3,7 @@ import os
 import shutil
 import time
 import uuid
+import glob
 
 from core.auth import clean_id, current_user, cookie
 from core.config import AIS_FILE, MAX_AIS_PER_ACCOUNT, USERS_DIR
@@ -43,12 +44,40 @@ def legacy_conversation_file(uid, ai_id):
     return os.path.join(ai_root(uid, ai_id), "conversation.json")
 
 
-def ai_photo_dir(uid, ai_id):
-    return os.path.join(ai_root(uid, ai_id), "ai_photos")
+def _conversation_payload(value):
+    """Normalize a stored conversation/archive record to conversation data."""
+    if not isinstance(value, dict):
+        return None
+    if isinstance(value.get("data"), dict):
+        value = value["data"]
+    if "conversation" in value and isinstance(value.get("conversation"), list):
+        value.setdefault("memory", {})
+        value.setdefault("proactive_state", {})
+        return value
+    return None
 
 
-def upload_dir(uid, ai_id):
-    return os.path.join(ai_root(uid, ai_id), "uploads")
+def _latest_conversation_archive(uid, ai_id):
+    """Find the newest usable JSON conversation in the conversations directory."""
+    root = conversations_root(uid, ai_id)
+    if not os.path.isdir(root):
+        return None
+    candidates = []
+    for path in glob.glob(os.path.join(root, "*.json")):
+        if os.path.basename(path) == "current.json":
+            continue
+        try:
+            raw = load_json(path, None)
+            data = _conversation_payload(raw)
+            if data is not None and data.get("conversation"):
+                stamp = raw.get("updated", data.get("updated", 0)) if isinstance(raw, dict) else 0
+                candidates.append((float(stamp or 0), os.path.getmtime(path), path, data))
+        except Exception:
+            continue
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    return candidates[0][3]
 
 
 def blank_settings(uid, ai_id):
@@ -68,39 +97,43 @@ def blank_settings(uid, ai_id):
 
 
 def load_settings(uid, ai_id):
-    data = load_json(settings_file(uid, ai_id), blank_settings(uid, ai_id))
+    path = settings_file(uid, ai_id)
+    data = load_json(path, blank_settings(uid, ai_id))
     if not isinstance(data, dict):
         data = blank_settings(uid, ai_id)
-    data["user_id"] = uid
-    data["ai_id"] = ai_id
-    data.setdefault("setup_complete", False)
-    data.setdefault("user_name", "")
     return data
 
 
 def save_settings(uid, ai_id, data):
-    data = dict(data or {})
-    data["user_id"] = uid
-    data["ai_id"] = ai_id
-    data["setup_complete"] = True
+    os.makedirs(ai_root(uid, ai_id), exist_ok=True)
     save_json(settings_file(uid, ai_id), data)
 
 
 def load_conversation(uid, ai_id):
-    """Read the current conversation from <AI>/conversations/current.json.
+    """Read conversation state from the conversations directory.
 
-    If the old conversation.json exists and current.json does not, migrate it
-    into the new authoritative location without deleting the old file.
+    The current file is authoritative. If it does not exist, recover the newest
+    archive in the same directory, then fall back to the legacy conversation.json.
+    This lets existing AI-Server-Storage data remain readable after the storage
+    layout change.
     """
-    path = conversation_file(uid, ai_id)
     default = {"conversation": [], "memory": {}, "proactive_state": {}}
+    path = conversation_file(uid, ai_id)
     if os.path.exists(path):
-        data = load_json(path, default)
-        return data if isinstance(data, dict) else default
+        data = _conversation_payload(load_json(path, default))
+        return data if data is not None else default
+
+    archived = _latest_conversation_archive(uid, ai_id)
+    if archived is not None:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        save_json(path, archived)
+        return archived
+
     legacy = legacy_conversation_file(uid, ai_id)
     if os.path.exists(legacy):
-        data = load_json(legacy, default)
-        if isinstance(data, dict):
+        data = _conversation_payload(load_json(legacy, default))
+        if data is not None:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
             save_json(path, data)
             return data
     return default
@@ -108,7 +141,9 @@ def load_conversation(uid, ai_id):
 
 def save_conversation_data(uid, ai_id, data):
     """Persist all conversation state exclusively in the conversations directory."""
-    save_json(conversation_file(uid, ai_id), data)
+    path = conversation_file(uid, ai_id)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    save_json(path, data)
 
 
 def migrate_legacy_ai(uid):
@@ -141,13 +176,8 @@ def ensure_first_ai(uid):
         migrated = migrate_legacy_ai(uid)
         if migrated:
             return migrated
-        ai_id = "AI1-" + uuid.uuid4().hex[:12]
-        os.makedirs(ai_root(uid, ai_id), exist_ok=True)
-        save_json(settings_file(uid, ai_id), blank_settings(uid, ai_id))
-        account["ais"] = [{"ai_id": ai_id, "created": time.time()}]
-        account["active_ai"] = ai_id
-        save_json(AIS_FILE, reg)
-    return account.get("active_ai") or account["ais"][0]["ai_id"]
+        return create_ai(uid)
+    return account["active_ai"] or account["ais"][0]["ai_id"]
 
 
 def list_ais(uid):
@@ -165,17 +195,9 @@ def active_ai(handler):
     uid = current_user(handler)
     if not uid:
         return None, None
-    ensure_first_ai(uid)
     reg = get_ai_registry()
-    account = reg["accounts"][uid]
-    valid = {x["ai_id"] for x in account.get("ais", [])}
-    ai_id = clean_id(cookie(handler, "AI_active"))
-    if ai_id not in valid:
-        ai_id = account.get("active_ai")
-    if ai_id not in valid:
-        ai_id = next(iter(valid))
-    account["active_ai"] = ai_id
-    save_json(AIS_FILE, reg)
+    account = reg.get("accounts", {}).get(uid, {})
+    ai_id = account.get("active_ai") or (account.get("ais") or [{}])[0].get("ai_id")
     return uid, ai_id
 
 
@@ -196,7 +218,8 @@ def create_ai(uid):
         return None
     ai_id = f"AI{len(account.get('ais', [])) + 1}-" + uuid.uuid4().hex[:12]
     os.makedirs(ai_root(uid, ai_id), exist_ok=True)
-    save_json(settings_file(uid, ai_id), blank_settings(uid, ai_id))
+    save_settings(uid, ai_id, blank_settings(uid, ai_id))
+    save_conversation_data(uid, ai_id, {"conversation": [], "memory": {}, "proactive_state": {}, "created": time.time(), "updated": time.time()})
     account["ais"].append({"ai_id": ai_id, "created": time.time()})
     account["active_ai"] = ai_id
     save_json(AIS_FILE, reg)
@@ -211,6 +234,6 @@ def delete_ai(uid, ai_id):
     account["ais"] = [x for x in account["ais"] if x["ai_id"] != ai_id]
     if account.get("active_ai") == ai_id:
         account["active_ai"] = account["ais"][0]["ai_id"]
-    save_json(AIS_FILE, reg)
     shutil.rmtree(ai_root(uid, ai_id), ignore_errors=True)
+    save_json(AIS_FILE, reg)
     return True
