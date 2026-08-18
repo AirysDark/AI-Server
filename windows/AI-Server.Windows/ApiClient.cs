@@ -11,7 +11,11 @@ public sealed class ApiClient
 
     private readonly CookieContainer _cookies = new();
     private readonly HttpClient _http;
-    private readonly JsonSerializerOptions _json = new() { PropertyNameCaseInsensitive = true };
+    private readonly JsonSerializerOptions _json = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
+    };
 
     public string BaseUrl { get; }
     public bool IsAuthenticated { get; private set; }
@@ -33,40 +37,31 @@ public sealed class ApiClient
     }
 
     public async Task<HealthResponse> HealthAsync(CancellationToken ct = default)
-    {
-        return await GetAsync<HealthResponse>("api/health", ct) ?? new HealthResponse();
-    }
+        => await GetAsync<HealthResponse>("api/health", ct) ?? new HealthResponse();
 
     public async Task<AuthMeResponse> MeAsync(CancellationToken ct = default)
     {
         var result = await GetAsync<AuthMeResponse>("api/auth/me", ct) ?? new AuthMeResponse();
         IsAuthenticated = result.Authenticated;
         UserId = result.UserId;
-        var active = result.Ais?.FirstOrDefault(x => x.Active);
-        ActiveAiId = active?.AiId;
+        ActiveAiId = result.Ais?.FirstOrDefault(x => x.Active)?.AiId;
         return result;
     }
 
-    public async Task<AuthResponse> LoginAsync(string email, string password, CancellationToken ct = default)
-        => await AuthenticateAsync("api/auth/login", email, password, null, ct);
+    public Task<AuthResponse> LoginAsync(string email, string password, CancellationToken ct = default)
+        => AuthenticateAsync("api/auth/login", email, password, null, ct);
 
-    public async Task<AuthResponse> RegisterAsync(string email, string password, string username, CancellationToken ct = default)
-        => await AuthenticateAsync("api/auth/register", email, password, username, ct);
+    public Task<AuthResponse> RegisterAsync(string email, string password, string username, CancellationToken ct = default)
+        => AuthenticateAsync("api/auth/register", email, password, username, ct);
 
     private async Task<AuthResponse> AuthenticateAsync(string path, string email, string password, string? username, CancellationToken ct)
     {
-        var payload = new Dictionary<string, string>
-        {
-            ["email"] = email,
-            ["password"] = password
-        };
+        var payload = new Dictionary<string, string> { ["email"] = email, ["password"] = password };
         if (username is not null) payload["username"] = username;
-
         using var response = await _http.PostAsJsonAsync(path, payload, _json, ct);
         var result = await ReadResponseAsync<AuthResponse>(response, ct);
         if (!response.IsSuccessStatusCode)
             throw new ApiException(result?.Error ?? response.ReasonPhrase ?? "Authentication failed", response.StatusCode);
-
         IsAuthenticated = true;
         UserId = result?.UserId;
         ActiveAiId = result?.Ais?.FirstOrDefault(x => x.Active)?.AiId;
@@ -82,15 +77,12 @@ public sealed class ApiClient
     }
 
     public async Task<List<AiSummary>> GetAisAsync(CancellationToken ct = default)
-    {
-        var result = await GetAsync<AisResponse>("api/ais", ct) ?? new AisResponse();
-        return result.Ais ?? [];
-    }
+        => (await GetAsync<AisResponse>("api/ais", ct))?.Ais ?? [];
 
     public async Task SelectAiAsync(string aiId, CancellationToken ct = default)
     {
         var result = await PostAsync<SelectAiResponse, object>("api/ai/select", new { ai_id = aiId }, ct);
-        if (result is null || !result.Ok) throw new ApiException("AI could not be selected", HttpStatusCode.BadRequest);
+        if (result?.Ok != true) throw new ApiException("AI could not be selected", HttpStatusCode.BadRequest);
         ActiveAiId = aiId;
     }
 
@@ -133,13 +125,13 @@ public sealed class ApiClient
         return result ?? new ChatResponse();
     }
 
-    public async Task<string?> UploadProfilePhotoAsync(string filePath, CancellationToken ct = default)
-        => await UploadFileAsync("api/profile_photo", filePath, "profile_photo", ct);
+    public Task<string?> UploadProfilePhotoAsync(string filePath, CancellationToken ct = default)
+        => UploadFileAsync("api/profile_photo", filePath, true, ct);
 
-    public async Task<string?> UploadAiPhotoAsync(string filePath, CancellationToken ct = default)
-        => await UploadFileAsync("api/ai_photo", filePath, "image", ct);
+    public Task<string?> UploadAiPhotoAsync(string filePath, CancellationToken ct = default)
+        => UploadFileAsync("api/ai_photo", filePath, false, ct);
 
-    private async Task<string?> UploadFileAsync(string path, string filePath, string responseField, CancellationToken ct)
+    private async Task<string?> UploadFileAsync(string path, string filePath, bool profile, CancellationToken ct)
     {
         using var form = new MultipartFormDataContent();
         await using var stream = File.OpenRead(filePath);
@@ -150,7 +142,7 @@ public sealed class ApiClient
         var result = await ReadResponseAsync<UploadResponse>(response, ct);
         if (!response.IsSuccessStatusCode)
             throw new ApiException(result?.Error ?? response.ReasonPhrase ?? "Upload failed", response.StatusCode);
-        return responseField == "profile_photo" ? result?.ProfilePhoto : result?.Image;
+        return profile ? result?.ProfilePhoto : result?.Image;
     }
 
     public string ResolveUrl(string? path)
@@ -187,10 +179,8 @@ public sealed class ApiClient
     }
 
     private static string GetError<T>(T? result, HttpResponseMessage response)
-    {
-        if (result is ErrorResponse error && !string.IsNullOrWhiteSpace(error.Error)) return error.Error;
-        return response.ReasonPhrase ?? "Server request failed";
-    }
+        => result is ErrorResponse error && !string.IsNullOrWhiteSpace(error.Error)
+            ? error.Error : response.ReasonPhrase ?? "Server request failed";
 
     private static string GetMimeType(string path) => Path.GetExtension(path).ToLowerInvariant() switch
     {
