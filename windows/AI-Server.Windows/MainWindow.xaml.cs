@@ -1,4 +1,9 @@
+using System;
 using System.Collections.ObjectModel;
+using System.IO;
+using System.Linq;
+using System.Net.Http;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -12,7 +17,7 @@ public partial class MainWindow : Window
     private readonly ApiClient _api = new();
     private string? _attachedImage;
     private bool _changingAi;
-    public ObservableCollection<ChatMessage> Messages { get; } = [];
+    public ObservableCollection<ChatMessage> Messages { get; } = new();
 
     public MainWindow() { InitializeComponent(); DataContext = this; Loaded += MainWindow_Loaded; }
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e) { try { var health = await _api.HealthAsync(); LoginStatus.Text = health.Ok ? $"Connected to {health.Host}" : "Server responded, but health check failed."; } catch (Exception ex) { LoginStatus.Text = "Server unavailable: " + ex.Message; } }
@@ -51,8 +56,8 @@ public partial class MainWindow : Window
     private async Task LoadConversationAsync()
     {
         Messages.Clear(); var history = await _api.GetConversationAsync();
-        foreach (var entry in history.Conversation ?? []) { if (!string.IsNullOrWhiteSpace(entry.User)) Messages.Add(new ChatMessage { Role = "You", Text = entry.User }); if (!string.IsNullOrWhiteSpace(entry.Ai)) Messages.Add(new ChatMessage { Role = AiNameText.Text, Text = entry.Ai, Image = entry.Image }); }
-        EmptyChatText.Visibility = Messages.Count == 0 ? Visibility.Visible : Visibility.Collapsed; if (Messages.Count > 0) MessagesList.ScrollIntoView(Messages[^1]);
+        foreach (var entry in history.Conversation ?? new List<ConversationEntry>()) { if (!string.IsNullOrWhiteSpace(entry.User)) Messages.Add(new ChatMessage { Role = "You", Text = entry.User }); if (!string.IsNullOrWhiteSpace(entry.Ai)) Messages.Add(new ChatMessage { Role = AiNameText.Text, Text = entry.Ai, Image = entry.Image }); }
+        EmptyChatText.Visibility = Messages.Count == 0 ? Visibility.Visible : Visibility.Collapsed; if (Messages.Count > 0) MessagesList.ScrollIntoView(Messages[Messages.Count - 1]);
     }
 
     private async void AiSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -95,9 +100,9 @@ public partial class MainWindow : Window
     private async Task SendMessageAsync()
     {
         var message = MessageBox.Text.Trim(); if (string.IsNullOrWhiteSpace(message) && string.IsNullOrWhiteSpace(_attachedImage)) return; var image = _attachedImage; _attachedImage = null; MessageBox.Clear();
-        Messages.Add(new ChatMessage { Role = "You", Text = message }); EmptyChatText.Visibility = Visibility.Collapsed; MessagesList.ScrollIntoView(Messages[^1]);
-        try { ServerStatus.Text = "AI is thinking..."; var response = await _api.ChatAsync(message, image); Messages.Add(new ChatMessage { Role = AiNameText.Text, Text = string.IsNullOrWhiteSpace(response.Reply) ? "No response returned." : response.Reply, Image = response.Image }); MessagesList.ScrollIntoView(Messages[^1]); ServerStatus.Text = "Connected to AI-Server"; }
-        catch (Exception ex) { Messages.Add(new ChatMessage { Role = "System", Text = "Request failed: " + ex.Message }); MessagesList.ScrollIntoView(Messages[^1]); ServerStatus.Text = "API error"; }
+        Messages.Add(new ChatMessage { Role = "You", Text = message }); EmptyChatText.Visibility = Visibility.Collapsed; MessagesList.ScrollIntoView(Messages[Messages.Count - 1]);
+        try { ServerStatus.Text = "AI is thinking..."; var response = await _api.ChatAsync(message, image); Messages.Add(new ChatMessage { Role = AiNameText.Text, Text = string.IsNullOrWhiteSpace(response.Reply) ? "No response returned." : response.Reply, Image = response.Image }); MessagesList.ScrollIntoView(Messages[Messages.Count - 1]); ServerStatus.Text = "Connected to AI-Server"; }
+        catch (Exception ex) { Messages.Add(new ChatMessage { Role = "System", Text = "Request failed: " + ex.Message }); MessagesList.ScrollIntoView(Messages[Messages.Count - 1]); ServerStatus.Text = "API error"; }
     }
 
     private async Task SetImageAsync(Image target, string? source)
@@ -105,7 +110,9 @@ public partial class MainWindow : Window
         if (string.IsNullOrWhiteSpace(source)) { target.Source = null; return; }
         try
         {
-            byte[] bytes; if (source.StartsWith("data:", StringComparison.OrdinalIgnoreCase)) bytes = Convert.FromBase64String(source[(source.IndexOf(',') + 1)..]); else using (var client = new HttpClient()) bytes = await client.GetByteArrayAsync(_api.ResolveUrl(source));
+            byte[] bytes;
+            if (source.StartsWith("data:", StringComparison.OrdinalIgnoreCase)) bytes = Convert.FromBase64String(source[(source.IndexOf(',') + 1)..]);
+            else using (var client = new HttpClient()) bytes = await client.GetByteArrayAsync(_api.ResolveUrl(source));
             using var ms = new MemoryStream(bytes); var image = new BitmapImage(); image.BeginInit(); image.CacheOption = BitmapCacheOption.OnLoad; image.StreamSource = ms; image.EndInit(); image.Freeze(); target.Source = image;
         }
         catch { target.Source = null; }
