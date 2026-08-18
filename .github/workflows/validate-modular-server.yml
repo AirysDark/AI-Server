@@ -1,0 +1,33 @@
+name: Validate modular server
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Compile Python sources
+        run: python -m compileall -q . -x '(^|/)\.git/'
+      - name: Validate modular structure
+        run: python tests/validate_structure.py
+      - name: Import core modules
+        run: python -c "import core.config, core.storage, core.auth, core.ai_manager, core.conversations, core.learning"
+      - name: Import API modules
+        run: python -c "import api.huggingface, api.openai, api.providers, api.routes"
+      - name: Import server entry point
+        run: python -c "import server; assert hasattr(server, 'AIHandler')"
+      - name: Import WSGI application
+        run: python -c "import wsgi; assert callable(wsgi.application)"

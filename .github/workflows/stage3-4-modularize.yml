@@ -1,0 +1,95 @@
+name: Stages 3-4 - AI and Conversation Modularization
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  modularize:
+    if: ${{ !contains(github.event.head_commit.message, '[stages-3-4]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract stage 3 and stage 4 modules
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          root = Path.cwd()
+          impl = root / 'core' / 'server_impl.py'
+          text = impl.read_text(encoding='utf-8')
+
+          # Stage 3: make the already-created auth and AI manager modules authoritative.
+          if '# STAGES_3_4_INTEGRATED' not in text:
+              # Remove the old path/config/storage declarations.
+              text = re.sub(
+                  r'\nPORT = 47823\nPUBLIC_HOSTNAME = .*?\nPUBLIC_URL = .*?\nMDNS_HOSTNAME = .*?\n'
+                  r'RECENT_CONTEXT_MESSAGES = .*?\nRELEVANT_MEMORY_LIMIT = .*?\n'
+                  r'PROACTIVE_MIN_MINUTES = .*?\nPROACTIVE_MAX_MINUTES = .*?\n'
+                  r'MAX_AIS_PER_ACCOUNT = .*?\nBASE_DIR = .*?\nUSERS_DIR = .*?\n'
+                  r'AUTH_FILE = .*?\nSESSIONS_FILE = .*?\nAIS_FILE = .*?\n'
+                  r'os\.makedirs\(USERS_DIR, exist_ok=True\)\n',
+                  '\n', text, count=1, flags=re.S)
+
+              # Remove duplicated persistence/auth/AI lifecycle functions.
+              text = re.sub(r'\ndef load_json\(path,default\):.*?\ndef features\(s\):', '\n\ndef features(s):', text, count=1, flags=re.S)
+
+              marker = 'from online_ai import ask_online\n'
+              imports = '''from online_ai import ask_online\n\nfrom core.config import *\nfrom core.storage import load_json, save_json\nfrom core.auth import (\n    clean_id, normalize_email, valid_email, hash_password, verify_password,\n    get_accounts, get_sessions, cookie, create_session, current_user,\n)\nfrom core.ai_manager import (\n    get_ai_registry, account_root, ais_root, ai_root, settings_file,\n    conversation_file, ai_photo_dir, upload_dir, blank_settings, load_settings,\n    save_settings, load_conversation, save_conversation_data, migrate_legacy_ai,\n    ensure_first_ai, list_ais, active_ai, set_active, create_ai, delete_ai,\n)\n# STAGES_3_4_INTEGRATED\n'''
+              if marker not in text:
+                  raise SystemExit('Import marker not found')
+              text = text.replace(marker, imports, 1)
+              impl.write_text(text, encoding='utf-8')
+
+          # Stage 4: conversation persistence and learning boundary.
+          conversations = root / 'core' / 'conversations.py'
+          if not conversations.exists():
+              conversations.write_text('''"""Conversation persistence boundary for AI Server."""\nfrom core.ai_manager import conversation_file\nfrom core.storage import load_json, save_json\n\nDEFAULT_CONVERSATION = {\n    "conversation": [],\n    "memory": {},\n    "proactive_state": {},\n}\n\ndef load_conversation(uid, ai_id):\n    return load_json(conversation_file(uid, ai_id), dict(DEFAULT_CONVERSATION))\n\ndef save_conversation_data(uid, ai_id, data):\n    save_json(conversation_file(uid, ai_id), data)\n\ndef append_message(uid, ai_id, message):\n    data = load_conversation(uid, ai_id)\n    data.setdefault("conversation", []).append(message)\n    save_conversation_data(uid, ai_id, data)\n    return data\n''', encoding='utf-8')
+
+          learning = root / 'core' / 'learning.py'
+          if not learning.exists():
+              learning.write_text('''"""Learning boundary for feedback and conversation learning."""\nfrom brain import learn_from_conversation\nfrom core.conversations import load_conversation, save_conversation_data\n\ndef learn_conversation(conversation, memory=None):\n    """Pass conversation data to the existing brain learner without changing it."""\n    return learn_from_conversation(conversation, memory)\n\ndef learn_ai(uid, ai_id):\n    data = load_conversation(uid, ai_id)\n    result = learn_conversation(data.get("conversation", []), data.get("memory", {}))\n    if isinstance(result, dict):\n        data["memory"] = result\n        save_conversation_data(uid, ai_id, data)\n    return result\n''', encoding='utf-8')
+
+          # Make stage 4 conversation functions authoritative in server_impl.
+          text = impl.read_text(encoding='utf-8')
+          if '# STAGE4_CONVERSATIONS_INTEGRATED' not in text:
+              text = text.replace(
+                  'from core.ai_manager import (',
+                  'from core.conversations import load_conversation, save_conversation_data\nfrom core.learning import learn_conversation\nfrom core.ai_manager import (', 1)
+              text = text.replace(
+                  '    save_settings, load_conversation, save_conversation_data, migrate_legacy_ai,\n',
+                  '    save_settings, migrate_legacy_ai,\n', 1)
+              text = text.replace('# STAGES_3_4_INTEGRATED', '# STAGES_3_4_INTEGRATED\n# STAGE4_CONVERSATIONS_INTEGRATED', 1)
+              impl.write_text(text, encoding='utf-8')
+
+      - name: Validate all modules
+        run: |
+          python -m py_compile server.py core/*.py wsgi.py chats_api.py
+          python - <<'PY'
+          import server
+          import wsgi
+          from core import auth, ai_manager, conversations, learning
+          assert server.AIHandler is not None
+          assert server.PORT == 47823
+          assert wsgi.application is not None
+          assert callable(auth.current_user)
+          assert callable(ai_manager.create_ai)
+          assert callable(conversations.load_conversation)
+          assert callable(learning.learn_conversation)
+          print('STAGES 3-4 VALIDATION OK')
+          PY
+
+      - name: Commit stages 3-4
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add core server.py .gitignore .github/workflows/stage3-4-modularize.yml
+          git commit -m 'Integrate stages 3-4 AI and conversation modules [stages-3-4]' || exit 0
+          git push

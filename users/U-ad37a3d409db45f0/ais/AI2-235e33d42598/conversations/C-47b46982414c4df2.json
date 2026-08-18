@@ -1,0 +1,20 @@
+{
+    "conversation_id": "C-47b46982414c4df2",
+    "title": "Hrlo",
+    "created": 1787073965.148844,
+    "updated": 1787073972.2134006,
+    "data": {
+        "conversation": [
+            {
+                "user": "Hrlo",
+                "ai": "Tell me more.\n\nFor full AI add Hugging Face token.",
+                "image": null,
+                "time": 1787073972.2134006
+            }
+        ],
+        "memory": {},
+        "proactive_state": {},
+        "created": 1787073965.148844,
+        "updated": 1787073972.2134006
+    }
+}

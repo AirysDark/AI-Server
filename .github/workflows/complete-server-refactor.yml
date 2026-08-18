@@ -1,0 +1,109 @@
+name: Complete server modularization
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  refactor:
+    if: ${{ !contains(github.event.head_commit.message, '[complete-server-refactor]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Split stable server entry point
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          root = Path.cwd()
+          server = root / 'server.py'
+          core = root / 'core'
+          core.mkdir(exist_ok=True)
+          (core / '__init__.py').write_text('"""AI Server core package."""\n', encoding='utf-8')
+
+          original = server.read_text(encoding='utf-8')
+
+          # Never overwrite an existing implementation. This makes the workflow
+          # safe to rerun and preserves the user's backup/current implementation.
+          impl = core / 'server_impl.py'
+          if not impl.exists():
+              implementation = original
+              implementation = implementation.replace(
+                  'BASE_DIR = os.path.dirname(os.path.abspath(__file__))',
+                  'BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))',
+                  1,
+              )
+              implementation = re.sub(
+                  r'\n# Load the Chats API after AIHandler exists.*?import chats_api[^\n]*\n',
+                  '\n',
+                  implementation,
+                  flags=re.S,
+              )
+              implementation = implementation.replace(
+                  '\nif __name__ == "__main__":',
+                  '\n# Standalone startup is owned by the root entry point.\nif False and __name__ == "__main__":',
+                  1,
+              )
+              impl.write_text(implementation, encoding='utf-8')
+
+          wrapper = '''"""Stable AI Server entry point.
+
+          The application implementation lives under core so the public
+          import name remains compatible with the Android client and WSGI.
+          """
+          import os
+
+          ROOT = os.path.dirname(os.path.abspath(__file__))
+          os.chdir(ROOT)
+
+          from core.server_impl import *  # noqa: F401,F403
+          from core.server_impl import _lan_ip, start_mdns
+
+          # Conversation routes are installed after AIHandler is available.
+          import chats_api  # noqa: E402,F401
+
+          if __name__ == "__main__":
+              start_mdns()
+              print("================================")
+              print("LOCAL AI SERVER")
+              print("================================")
+              print(f"LAN:    http://{_lan_ip()}:{PORT}/")
+              print(f"PUBLIC: {PUBLIC_URL}")
+              print("================================")
+              ThreadingHTTPServer(("0.0.0.0", PORT), AIHandler).serve_forever()
+          '''
+          server.write_text(wrapper, encoding='utf-8')
+
+          # Add clear module boundaries without changing runtime behavior.
+          (core / 'config.py').write_text('''"""Central server configuration constants."""\nPORT = 47823\nPUBLIC_HOSTNAME = "ai-server.ddns.net"\nPUBLIC_URL = f"http://{PUBLIC_HOSTNAME}:{PORT}/"\nMDNS_HOSTNAME = "ai-server.ddns.net"\nRECENT_CONTEXT_MESSAGES = 10\nRELEVANT_MEMORY_LIMIT = 10\nPROACTIVE_MIN_MINUTES = 10\nPROACTIVE_MAX_MINUTES = 30\nMAX_AIS_PER_ACCOUNT = 3\n''', encoding='utf-8')
+
+          (core / 'README.md').write_text('''# AI Server core\n\n`server_impl.py` contains the compatibility implementation extracted from the original `server.py`.\n\nThe root `server.py` remains the stable entry point used by local execution and PythonAnywhere WSGI.\n\nThis first modular boundary deliberately preserves all existing request behavior while moving the implementation out of the root entry point. Further domain modules can now be extracted without changing the public server import.\n''', encoding='utf-8')
+
+      - name: Validate refactor
+        run: |
+          python -m py_compile server.py core/server_impl.py core/config.py chats_api.py wsgi.py
+          python - <<'PY'
+          import server
+          assert server.AIHandler is not None
+          assert server.PORT == 47823
+          import wsgi
+          assert wsgi.application is not None
+          print('SERVER IMPORT OK')
+          print('WSGI IMPORT OK')
+          PY
+
+      - name: Commit completed refactor
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add server.py core .github/workflows/complete-server-refactor.yml
+          git rm -f .github/workflows/refactor-server.yml 2>/dev/null || true
+          git commit -m 'Complete server modular entry point [complete-server-refactor]' || exit 0
+          git push

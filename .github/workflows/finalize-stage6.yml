@@ -1,0 +1,52 @@
+name: Finalize Stage 6
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Remove obsolete mDNS
+        run: python tools/finalize_stage6.py
+
+      - name: Validate Python files
+        run: python -m compileall -q .
+
+      - name: Validate imports
+        run: |
+          python - <<'PY'
+          import server
+          import wsgi
+          assert server.AIHandler is not None
+          assert callable(wsgi.application)
+          print("server.AIHandler: OK")
+          print("wsgi.application: OK")
+          PY
+
+      - name: Verify mDNS is gone
+        run: |
+          ! grep -R "stage5_bridge\|network.mdns\|start_mdns\|stop_mdns\|MDNS_HOSTNAME" -n server.py wsgi.py core api network 2>/dev/null
+
+      - name: Remove cleanup helper
+        run: rm -f tools/finalize_stage6.py
+
+      - name: Commit final cleanup
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No cleanup changes required"
+          else
+            git commit -m "Complete Stage 6 cleanup"
+            git push
+          fi

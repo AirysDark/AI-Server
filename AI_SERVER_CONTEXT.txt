@@ -1,0 +1,292 @@
+============================================================
+AI SERVER / PYTHONANYWHERE / NO-IP — DEPLOYMENT CONTEXT
+============================================================
+
+PROJECT NAME
+------------
+AI Server
+
+GitHub repository:
+    https://github.com/AirysDark/Kitty-server
+
+The repository is currently named Kitty-server on GitHub, but the deployed
+application/project should be referred to as AI Server, not Kitty-server.
+
+CURRENT STATUS
+--------------
+THE SERVER IS ONLINE AND WORKING.
+
+Public server:
+    https://ai-server.ddns.net
+
+The Android app also successfully communicates with:
+    https://ai-server.ddns.net
+
+Confirmed working:
+    - No-IP DNS
+    - CNAME
+    - PythonAnywhere custom domain
+    - HTTPS
+    - PythonAnywhere web app
+    - Python 3.13 WSGI worker
+    - requests package
+    - WSGI import
+    - AI Server import
+    - Android -> public server connectivity
+
+DO NOT restart the old requests-install troubleshooting. The requests
+problem has already been diagnosed and resolved.
+
+============================================================
+PYTHONANYWHERE
+============================================================
+
+Project directory:
+    /home/AirysDarkX2/Kitty-server
+
+PythonAnywhere WSGI file:
+    /var/www/airysdarkx2_pythonanywhere_com_wsgi.py
+
+Project WSGI file:
+    /home/AirysDarkX2/Kitty-server/wsgi.py
+
+Custom domain:
+    ai-server.ddns.net
+
+PythonAnywhere assigned CNAME target:
+    webapp-3180826.pythonanywhere.com
+
+Active Python executable:
+    /usr/local/bin/uwsgi
+
+Active Python version:
+    3.13.1 (main, Jan 16 2025, 13:50:41) [GCC 11.4.0]
+
+Current working directory:
+    /home/AirysDarkX2/Kitty-server
+
+============================================================
+REQUESTS — RESOLVED
+============================================================
+
+Original error:
+    ModuleNotFoundError: No module named 'requests'
+
+Final debug result:
+
+    ==================================================
+    KITTY SERVER WSGI DEBUG
+    ==================================================
+
+    PROJECT:
+    /home/AirysDarkX2/Kitty-server
+
+    CURRENT DIRECTORY:
+    /home/AirysDarkX2/Kitty-server
+
+    PYTHON EXECUTABLE:
+    /usr/local/bin/uwsgi
+
+    PYTHON VERSION:
+    3.13.1 (main, Jan 16 2025, 13:50:41) [GCC 11.4.0]
+
+    PYTHON PATH:
+    /home/AirysDarkX2/Kitty-server
+    /var/www
+    .
+    /var/www
+    /usr/local/lib/python313.zip
+    /usr/local/lib/python3.13
+    /usr/local/lib/python3.13/lib-dynload
+    /usr/local/lib/python3.13/site-packages
+
+    ==================================================
+    REQUESTS IMPORT TEST
+    ==================================================
+
+    REQUESTS IMPORT: SUCCESS
+    REQUESTS VERSION: 2.32.3
+    REQUESTS FILE:
+    /usr/local/lib/python3.13/site-packages/requests/__init__.py
+
+    ==================================================
+    WSGI IMPORT TEST
+    ==================================================
+
+    WSGI IMPORT: SUCCESS
+    application object loaded successfully.
+
+This proves requests is installed and importable by the actual Python 3.13
+PythonAnywhere WSGI environment.
+
+DO NOT treat requests as the current problem.
+
+============================================================
+WSGI HISTORY
+============================================================
+
+A PythonAnywhere adapter is used to connect the existing HTTP AIHandler to
+the PythonAnywhere WSGI environment.
+
+A previous error was:
+    AttributeError: 'WSGIHandler' object has no attribute 'directory'
+
+This happened because Python 3.13's SimpleHTTPRequestHandler expected the
+handler to have a directory attribute.
+
+The WSGI adapter was updated to handle the Python 3.13 environment correctly.
+
+A separate temporary typo was:
+    from wsgi import applicatio
+
+Correct:
+    from wsgi import application
+
+The final WSGI debug test confirmed:
+    WSGI IMPORT: SUCCESS
+
+============================================================
+NO-IP DNS
+============================================================
+
+Hostname:
+    ai-server.ddns.net
+
+Final DNS record:
+    Type: CNAME
+    Host: ai-server
+    Target: webapp-3180826.pythonanywhere.com
+    TTL: 60 seconds
+
+The CNAME was initially pointed at:
+    www.ai-serer.com
+
+That was not the PythonAnywhere target and was corrected.
+
+The final CNAME is working.
+
+PythonAnywhere shows:
+    ai-server.ddns.net
+
+and:
+    CNAME: webapp-3180826.pythonanywhere.com
+
+============================================================
+DEPLOYMENT ARCHITECTURE
+============================================================
+
+Android app
+    |
+    | HTTPS
+    v
+https://ai-server.ddns.net
+    |
+    | No-IP CNAME
+    v
+webapp-3180826.pythonanywhere.com
+    |
+    | PythonAnywhere Web App
+    v
+WSGI
+    |
+    v
+/home/AirysDarkX2/Kitty-server/wsgi.py
+    |
+    v
+server.py
+    |
+    v
+AIHandler
+    |
+    v
+online_ai.py
+    |
+    v
+requests
+    |
+    v
+online AI/API functionality
+
+============================================================
+KEY FILES
+============================================================
+
+GitHub:
+    https://github.com/AirysDark/Kitty-server
+
+Project:
+    /home/AirysDarkX2/Kitty-server
+
+Main server:
+    server.py
+
+Online AI integration:
+    online_ai.py
+
+WSGI:
+    wsgi.py
+
+PythonAnywhere WSGI:
+    /var/www/airysdarkx2_pythonanywhere_com_wsgi.py
+
+Dependencies:
+    requirements.txt
+
+Public endpoint:
+    https://ai-server.ddns.net
+
+============================================================
+CONFIRMED FACTS
+============================================================
+
+1. PythonAnywhere custom domain works.
+2. ai-server.ddns.net works.
+3. No-IP CNAME works.
+4. Python 3.13.1 is the active PythonAnywhere WSGI runtime.
+5. requests 2.32.3 is installed in the Python 3.13 environment.
+6. Python can import requests successfully.
+7. Python can import the project's WSGI application successfully.
+8. The server can load through WSGI.
+9. The Android app can connect to ai-server.ddns.net.
+10. The deployed server is online.
+11. The Android app already works against the deployed server.
+
+============================================================
+DO NOT REPEAT OLD TROUBLESHOOTING
+============================================================
+
+Do not:
+    - reinstall requests unless a NEW error specifically proves it is missing
+    - switch Python versions without evidence of a new Python-version problem
+    - claim No-IP DNS is broken
+    - claim the PythonAnywhere custom domain is not working
+    - revert the WSGI adapter to an older broken version
+    - assume the active WSGI runtime is Python 3.7
+    - confuse historical errors with the current production state
+
+============================================================
+NEXT DEVELOPMENT FOCUS
+============================================================
+
+The deployment/network layer is working.
+
+Future debugging should focus on actual API/application behavior, including:
+
+    1. Android chat/API endpoint behavior
+    2. GET endpoints
+    3. POST endpoints
+    4. JSON request/response handling
+    5. Online AI calls
+    6. Authentication/API keys if applicable
+    7. Server-side exception handling
+    8. HTTP response status codes
+    9. Android error handling
+    10. Production AI responses
+
+Only investigate a new error based on the new error output. Do not go back to
+already-resolved requests, Python version, DNS, or WSGI issues without new
+evidence.
+
+============================================================
+END OF AI SERVER DEPLOYMENT CONTEXT
+============================================================

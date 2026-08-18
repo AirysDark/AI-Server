@@ -1,0 +1,19 @@
+{
+    "users": {
+        "U-1e488d3149764a4a": {
+            "email": "megamanx2sonic@gmail.com",
+            "username": "Doggy",
+            "password": "61e4cb3e3530deb7a4bff73dad19b863:fdcc719f0a6d64ad0eff0a01fd41ac8647b503592bfa2f3d88e57a83c7e4552c"
+        },
+        "U-ad37a3d409db45f0": {
+            "email": "jodestorm@gmail.com",
+            "username": "jodestorm",
+            "password": "d6cbb8b50e8e062f2fa3678e52eee5e1:03f7bdca45e540924aa17ef1c975dfdfd8514b0a805f6ed003da642da0509f5e"
+        },
+        "U-3206fa2fa1e74c9b": {
+            "email": "megamanx2sonic@hotmail.com",
+            "username": "test",
+            "password": "de182abb66334909fd194cbb5dcc94a8:845c52ee1dd77a22acbfae5b5867ccd307b92643fe705fdad24a47f8264b8141"
+        }
+    }
+}

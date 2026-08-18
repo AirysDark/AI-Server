@@ -1,0 +1,14 @@
+{
+    "conversation": [
+        {
+            "user": "test",
+            "ai": "I will remember useful details.\n\nFor full AI add Hugging Face token.",
+            "image": null,
+            "time": 1787079670.470127
+        }
+    ],
+    "memory": {},
+    "proactive_state": {},
+    "updated": 1787079670.470127,
+    "created": 1787079670.470127
+}

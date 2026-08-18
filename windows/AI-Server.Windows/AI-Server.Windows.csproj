@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <AssemblyName>AI-Server</AssemblyName>
+    <RootNamespace>AIServerWindows</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>..\icon\icon.ico</ApplicationIcon>
+  </PropertyGroup>
+  <Target Name="GenerateApplicationIcon" BeforeTargets="PrepareResources">
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\icon\GenerateIco.ps1&quot; -InputPng &quot;$(MSBuildProjectDirectory)\..\icon\icon.png&quot; -OutputIco &quot;$(MSBuildProjectDirectory)\..\icon\icon.ico&quot;" />
+  </Target>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.WindowsDesktop.App.WPF" />
+    <Resource Include="..\icon\icon.png" Link="icon.png" />
+  </ItemGroup>
+</Project>
