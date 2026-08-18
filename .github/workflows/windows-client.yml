@@ -1,0 +1,26 @@
+name: Windows Client Build
+
+on:
+  push:
+    paths:
+      - 'windows/**'
+      - '.github/workflows/windows-client.yml'
+  pull_request:
+    paths:
+      - 'windows/**'
+      - '.github/workflows/windows-client.yml'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Restore
+        run: dotnet restore windows/AI-Server.Windows.sln
+      - name: Build
+        run: dotnet build windows/AI-Server.Windows.sln --configuration Release --no-restore
