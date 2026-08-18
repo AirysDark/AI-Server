@@ -20,11 +20,15 @@ public class AiSettings
     public string? AiId { get; set; }
     public bool SetupComplete { get; set; }
     public string? AiName { get; set; }
+    public string? AiGender { get; set; }
     public string? ProfilePhoto { get; set; }
+    public string? BannerPhoto { get; set; }
     public string? Description { get; set; }
     public string? Background { get; set; }
     public string? UserInformation { get; set; }
     public string? UserName { get; set; }
+    public string? UserGender { get; set; }
+    public string? HfToken { get; set; }
     public string? Personality { get; set; }
     public string? Instructions { get; set; }
     public AiConfig Config { get; set; } = new();
