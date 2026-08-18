@@ -5,7 +5,7 @@ import re
 import time
 import uuid
 
-from core.ai_manager import active_ai, ai_root, load_conversation, save_conversation_data
+from core.ai_manager import active_ai, ai_root, conversations_root, load_conversation, save_conversation_data
 from core.storage import load_json, save_json
 
 
@@ -15,16 +15,46 @@ def _safe(value):
 
 def _paths(uid, ai_id):
     root = ai_root(uid, ai_id)
-    archive = os.path.join(root, "conversations")
-    return root, archive, os.path.join(root, "conversation.json")
+    archive = conversations_root(uid, ai_id)
+    return root, archive
+
+
+def _normalise_record(raw, filename):
+    """Accept both archived records and older raw conversation JSON files."""
+    if not isinstance(raw, dict):
+        return None
+    if isinstance(raw.get("data"), dict):
+        data = raw["data"]
+        cid = str(raw.get("conversation_id") or os.path.splitext(filename)[0])
+        title = str(raw.get("title") or "").strip()
+        created = raw.get("created", data.get("created", 0))
+        updated = raw.get("updated", data.get("updated", 0))
+    elif isinstance(raw.get("conversation"), list):
+        data = raw
+        cid = os.path.splitext(filename)[0]
+        title = str(raw.get("title") or "").strip()
+        created = raw.get("created", 0)
+        updated = raw.get("updated", 0)
+    else:
+        return None
+    if not data.get("conversation"):
+        return None
+    if not title:
+        title = _title(data)
+    try:
+        updated = float(updated or os.path.getmtime(os.path.join(os.path.dirname(os.path.abspath(__file__)), "0")))
+    except Exception:
+        updated = time.time()
+    return {"conversation_id": cid, "title": title, "created": created, "updated": updated, "data": data}
 
 
 def _title(data):
     explicit = str(data.get("title", "")).strip() if isinstance(data, dict) else ""
     if explicit:
         return explicit[:80]
-    # Automatically name a conversation from its first user message.
     for item in data.get("conversation", []):
+        if not isinstance(item, dict):
+            continue
         text = str(item.get("user", item.get("content", ""))).strip()
         if text:
             text = " ".join(text.split())
@@ -33,7 +63,7 @@ def _title(data):
 
 
 def _archive_current(uid, ai_id):
-    _, archive, _ = _paths(uid, ai_id)
+    _, archive = _paths(uid, ai_id)
     data = load_conversation(uid, ai_id)
     if not data.get("conversation"):
         return None
@@ -46,15 +76,16 @@ def _archive_current(uid, ai_id):
 
 
 def list_chats(uid, ai_id):
-    _, archive, _ = _paths(uid, ai_id)
+    _, archive = _paths(uid, ai_id)
     os.makedirs(archive, exist_ok=True)
     result = []
     for name in os.listdir(archive):
-        if not name.endswith(".json"):
+        if not name.endswith(".json") or name == "current.json":
             continue
+        path = os.path.join(archive, name)
         try:
-            record = load_json(os.path.join(archive, name), {})
-            if isinstance(record, dict) and record.get("conversation_id"):
+            record = _normalise_record(load_json(path, {}), name)
+            if record:
                 result.append({k: record.get(k) for k in ("conversation_id", "title", "created", "updated")})
         except Exception:
             continue
@@ -76,10 +107,11 @@ def new_chat(uid, ai_id):
 def open_chat(uid, ai_id, conversation_id):
     if conversation_id == "current":
         return load_conversation(uid, ai_id)
-    _, archive, _ = _paths(uid, ai_id)
-    path = os.path.join(archive, _safe(conversation_id) + ".json")
-    record = load_json(path, None)
-    if not isinstance(record, dict) or not isinstance(record.get("data"), dict):
+    _, archive = _paths(uid, ai_id)
+    filename = _safe(conversation_id) + ".json"
+    path = os.path.join(archive, filename)
+    record = _normalise_record(load_json(path, None), filename)
+    if not record:
         return None
     current = load_conversation(uid, ai_id)
     if current.get("conversation"):
@@ -102,17 +134,24 @@ def rename_chat(uid, ai_id, conversation_id, title):
         data["updated"] = time.time()
         save_conversation_data(uid, ai_id, data)
         return True
-    _, archive, _ = _paths(uid, ai_id)
+    _, archive = _paths(uid, ai_id)
     path = os.path.join(archive, _safe(conversation_id) + ".json")
     record = load_json(path, None)
-    if not isinstance(record, dict) or not isinstance(record.get("data"), dict):
+    if not isinstance(record, dict):
         return False
-    record["title"] = title
-    record["updated"] = time.time()
-    record["data"]["title"] = title
-    record["data"]["updated"] = record["updated"]
-    save_json(path, record)
-    return True
+    if isinstance(record.get("data"), dict):
+        record["title"] = title
+        record["updated"] = time.time()
+        record["data"]["title"] = title
+        record["data"]["updated"] = record["updated"]
+        save_json(path, record)
+        return True
+    if isinstance(record.get("conversation"), list):
+        record["title"] = title
+        record["updated"] = time.time()
+        save_json(path, record)
+        return True
+    return False
 
 
 def install_handler_routes(handler_class, server_module):
