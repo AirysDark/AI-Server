@@ -8,6 +8,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MEMORY_FILE = os.path.join(BASE_DIR, "memory.json")
 LEARNING_FILE = os.path.join(BASE_DIR, "learning", "replies.json")
 TRAINING_FILE = os.path.join(BASE_DIR, "learning", "training.json")
+FAKE_AI_UPGRADE_NOTICE = "For full AI add Hugging Face token."
 
 
 def load_json(path, default):
@@ -40,7 +41,12 @@ def learn_from_conversation(user, reply, memory_path=None):
     path = memory_path or MEMORY_FILE
     memory = load_json(path, default_memory())
     memory.setdefault("conversations", [])
-    memory["conversations"].append({"time": datetime.now().isoformat(), "user": user, "AI": reply})
+    entry = {"time": datetime.now().isoformat(), "user": user, "AI": reply}
+    if memory["conversations"]:
+        last = memory["conversations"][-1]
+        if last.get("user") == user and last.get("AI") == reply:
+            return
+    memory["conversations"].append(entry)
     memory["conversations"] = memory["conversations"][-500:]
 
     text = str(user).lower()
@@ -52,6 +58,18 @@ def learn_from_conversation(user, reply, memory_path=None):
             remember(memory, "facts", key, user)
 
     save_json(path, memory)
+
+
+def learn_online_response(user, reply, settings=None):
+    settings = settings or {}
+    uid = str(settings.get("user_id", "")).strip()
+    ai_id = str(settings.get("ai_id", "")).strip()
+    if not uid or not ai_id:
+        return
+    safe_uid = re.sub(r"[^A-Za-z0-9_-]", "", uid)[:100]
+    safe_ai = re.sub(r"[^A-Za-z0-9_-]", "", ai_id)[:100]
+    memory_path = os.path.join(BASE_DIR, "users", safe_uid, "ais", safe_ai, "brain_memory.json")
+    learn_from_conversation(user, reply, memory_path)
 
 
 def learn_reply(trigger, reply, learning_path=None):
@@ -80,6 +98,15 @@ def decide(message):
     return {"action": "text"}
 
 
+def fake_reply(text):
+    text = str(text).strip()
+    if not text:
+        return FAKE_AI_UPGRADE_NOTICE
+    if FAKE_AI_UPGRADE_NOTICE.lower() in text.lower():
+        return text
+    return f"{text}\n\n{FAKE_AI_UPGRADE_NOTICE}"
+
+
 def think(message, settings=None, memory_path=None, learning_path=None):
     memory = load_json(memory_path or MEMORY_FILE, default_memory())
     text = str(message).strip()
@@ -88,17 +115,27 @@ def think(message, settings=None, memory_path=None, learning_path=None):
     if lower == "/learn":
         memory["learning_mode"] = True
         save_json(memory_path or MEMORY_FILE, memory)
-        return "Learning mode enabled."
+        reply = fake_reply("Learning mode enabled.")
+        learn_from_conversation(text, reply, memory_path)
+        return reply
 
     decision = decide(text)
     if decision.get("action") == "send_image":
-        return "Here is a picture for you!"
+        reply = fake_reply("Here is a picture for you!")
+        learn_from_conversation(text, reply, memory_path)
+        return reply
 
     learned = find_reply(text, learning_path)
     if learned:
-        return learned
+        reply = fake_reply(learned)
+        learn_from_conversation(text, reply, memory_path)
+        return reply
 
     if "what is my name" in lower:
-        return "Your name is " + memory.get("profile", {}).get("name", "unknown")
+        reply = fake_reply("Your name is " + memory.get("profile", {}).get("name", "unknown"))
+        learn_from_conversation(text, reply, memory_path)
+        return reply
 
-    return random.choice(["Tell me more.", "I am learning from our conversations.", "I will remember useful details."])
+    reply = fake_reply(random.choice(["Tell me more.", "I am learning from our conversations.", "I will remember useful details."]))
+    learn_from_conversation(text, reply, memory_path)
+    return reply
