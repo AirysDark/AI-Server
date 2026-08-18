@@ -12,13 +12,24 @@ def learn_message(user, reply, memory_path=None):
 
 
 def save_message(uid, ai_id, user_message, ai_reply, image=None):
+    """Persist every exchange in a backwards-compatible format.
+
+    Older clients used ``AI`` while the current server uses ``ai``. Store both
+    spellings, plus both timestamp names, so an existing client can never
+    silently lose the assistant side when the page is refreshed.
+    """
     data = get_conversation(uid, ai_id)
     now = __import__("time").time()
+    user_text = str(user_message or "")
+    ai_text = str(ai_reply or "")
     data.setdefault("conversation", []).append({
-        "user": user_message,
-        "ai": ai_reply,
+        "user": user_text,
+        "ai": ai_text,
+        "AI": ai_text,
+        "assistant": ai_text,
         "image": image,
         "time": now,
+        "timestamp": now,
     })
     data["updated"] = now
     data.setdefault("created", now)
