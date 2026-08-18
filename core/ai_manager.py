@@ -22,7 +22,7 @@ def _payload(value):
 
 def load_archived_conversation(uid,ai_id,conversation_id):
     safe=clean_id(conversation_id)
-    if not safe or safe in ("current",): return None
+    if not safe or safe=="current": return None
     path=conversation_path(uid,ai_id,safe)
     if not os.path.isfile(path): return None
     return _payload(load_json(path,None))
@@ -50,26 +50,25 @@ def _latest_archive(uid,ai_id):
             raw=load_json(path,None); data=_payload(raw)
             if data and data.get("conversation"): candidates.append((float(data.get("updated",0) or 0),os.path.getmtime(path),data))
         except Exception: pass
-    if not candidates: return None
+    if not candidates:return None
     candidates.sort(key=lambda x:(x[0],x[1]),reverse=True); return candidates[0][2]
 
 def load_conversation(uid,ai_id):
-    """Legacy compatibility only. New chat code must use a conversation id."""
+    """Legacy compatibility only; does not create or read current.json."""
     archived=_latest_archive(uid,ai_id)
-    if archived is not None: return archived
+    if archived is not None:return archived
     legacy=legacy_conversation_file(uid,ai_id)
-    if os.path.isfile(legacy): return _payload(load_json(legacy,{"conversation":[],"memory":{},"proactive_state":{}})) or {"conversation":[],"memory":{},"proactive_state":{}}
+    if os.path.isfile(legacy):return _payload(load_json(legacy,{"conversation":[],"memory":{},"proactive_state":{}})) or {"conversation":[],"memory":{},"proactive_state":{}}
     return {"conversation":[],"memory":{},"proactive_state":{}}
 
 def save_conversation_data(uid,ai_id,data):
-    """Disabled for chat persistence; prevents creation of current.json."""
     raise RuntimeError("Direct chat persistence requires a conversation_id")
 
 def migrate_legacy_ai(uid):
     reg=get_ai_registry(); account=reg.setdefault("accounts",{}).setdefault(uid,{"ais":[],"active_ai":None})
-    if account.get("ais"): return account["ais"][0]["ai_id"]
+    if account.get("ais"):return account["ais"][0]["ai_id"]
     old_settings=os.path.join(account_root(uid),"settings.json"); old_conversation=os.path.join(USERS_DIR,uid+".json")
-    if not os.path.exists(old_settings) and not os.path.exists(old_conversation): return None
+    if not os.path.exists(old_settings) and not os.path.exists(old_conversation):return None
     ai_id="AI1-"+uuid.uuid4().hex[:12]; os.makedirs(ai_root(uid,ai_id),exist_ok=True); settings=load_json(old_settings,blank_settings(uid,ai_id)); settings["user_id"]=uid; settings["ai_id"]=ai_id; save_settings(uid,ai_id,settings)
     if os.path.exists(old_conversation):
         cid="C-"+uuid.uuid4().hex[:16]; save_archived_conversation(uid,ai_id,cid,_payload(load_json(old_conversation,{})) or {"conversation":[]})
@@ -79,7 +78,7 @@ def ensure_first_ai(uid):
     reg=get_ai_registry(); account=reg.setdefault("accounts",{}).setdefault(uid,{"ais":[],"active_ai":None})
     if not account.get("ais"):
         migrated=migrate_legacy_ai(uid)
-        if migrated: return migrated
+        if migrated:return migrated
         return create_ai(uid)
     return account.get("active_ai") or account["ais"][0]["ai_id"]
 def list_ais(uid):
@@ -98,7 +97,7 @@ def active_ai(handler):
     return uid,ai_id if ai_id in valid else (account.get("ais") or [{}])[0].get("ai_id")
 def set_active(uid,ai_id):
     reg=get_ai_registry(); account=reg.setdefault("accounts",{}).setdefault(uid,{"ais":[],"active_ai":None})
-    if ai_id not in {x["ai_id"] for x in account.get("ais",[]): return False
+    if ai_id not in {x["ai_id"] for x in account.get("ais",[])}:return False
     account["active_ai"]=ai_id; save_json(AIS_FILE,reg); return True
 def create_ai(uid):
     reg=get_ai_registry(); account=reg.setdefault("accounts",{}).setdefault(uid,{"ais":[],"active_ai":None})
