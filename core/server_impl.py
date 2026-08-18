@@ -6,11 +6,12 @@ by their dedicated modules and installed by the compatibility bridges.
 """
 from http.server import SimpleHTTPRequestHandler
 import json, os, uuid, re, random, time, shutil
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, unquote
 from email.parser import BytesParser
 from email.policy import default
 from brain import think
 from online_ai import ask_online
+from core.config import USERS_DIR
 
 
 def features(settings):
@@ -132,6 +133,18 @@ class AIHandler(SimpleHTTPRequestHandler):
         self.send_header("Content-Length", str(len(output)))
         self.end_headers()
         self.wfile.write(output)
+
+    def translate_path(self, path):
+        """Serve /users/* from AI-Server-Storage instead of the code repo."""
+        parsed_path = urlparse(path).path
+        if parsed_path == "/users" or parsed_path.startswith("/users/"):
+            relative = unquote(parsed_path[len("/users"):]).lstrip("/")
+            root = os.path.abspath(USERS_DIR)
+            target = os.path.abspath(os.path.join(root, relative))
+            if target == root or target.startswith(root + os.sep):
+                return target
+            return root
+        return super().translate_path(path)
 
     def auth_required(self):
         uid = current_user(self)
