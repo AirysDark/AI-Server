@@ -35,17 +35,14 @@ def conversations_root(uid, ai_id):
 
 
 def conversation_file(uid, ai_id):
-    """Authoritative current conversation file inside the conversations directory."""
     return os.path.join(conversations_root(uid, ai_id), "current.json")
 
 
 def legacy_conversation_file(uid, ai_id):
-    """Old location retained only for backwards-compatible migration."""
     return os.path.join(ai_root(uid, ai_id), "conversation.json")
 
 
 def _conversation_payload(value):
-    """Normalize a stored conversation/archive record to conversation data."""
     if not isinstance(value, dict):
         return None
     if isinstance(value.get("data"), dict):
@@ -58,7 +55,6 @@ def _conversation_payload(value):
 
 
 def _latest_conversation_archive(uid, ai_id):
-    """Find the newest usable JSON conversation in the conversations directory."""
     root = conversations_root(uid, ai_id)
     if not os.path.isdir(root):
         return None
@@ -69,9 +65,14 @@ def _latest_conversation_archive(uid, ai_id):
         try:
             raw = load_json(path, None)
             data = _conversation_payload(raw)
-            if data is not None and data.get("conversation"):
-                stamp = raw.get("updated", data.get("updated", 0)) if isinstance(raw, dict) else 0
-                candidates.append((float(stamp or 0), os.path.getmtime(path), path, data))
+            if data is None or not data.get("conversation"):
+                continue
+            stamp = raw.get("updated", data.get("updated", 0)) if isinstance(raw, dict) else 0
+            try:
+                stamp = float(stamp or 0)
+            except Exception:
+                stamp = 0
+            candidates.append((stamp, os.path.getmtime(path), path, data))
         except Exception:
             continue
     if not candidates:
@@ -87,21 +88,14 @@ def blank_settings(uid, ai_id):
         "background": "", "user_information": "", "user_name": "",
         "personality": "", "instructions": "",
         "config": {"traits": [], "rules": []},
-        "features": {
-            "online_ai": True, "learning": True,
-            "long_term_memory": True, "relevant_memory": True,
-            "automatic_images": False, "proactive_images": False,
-        },
+        "features": {"online_ai": True, "learning": True, "long_term_memory": True, "relevant_memory": True, "automatic_images": False, "proactive_images": False},
         "proactive": {"enabled": False},
     }
 
 
 def load_settings(uid, ai_id):
-    path = settings_file(uid, ai_id)
-    data = load_json(path, blank_settings(uid, ai_id))
-    if not isinstance(data, dict):
-        data = blank_settings(uid, ai_id)
-    return data
+    data = load_json(settings_file(uid, ai_id), blank_settings(uid, ai_id))
+    return data if isinstance(data, dict) else blank_settings(uid, ai_id)
 
 
 def save_settings(uid, ai_id, data):
@@ -110,18 +104,19 @@ def save_settings(uid, ai_id, data):
 
 
 def load_conversation(uid, ai_id):
-    """Read conversation state from the conversations directory.
+    """Load the AI's conversation, preferring the conversations directory.
 
-    The current file is authoritative. If it does not exist, recover the newest
-    archive in the same directory, then fall back to the legacy conversation.json.
-    This lets existing AI-Server-Storage data remain readable after the storage
-    layout change.
+    A non-empty current.json is authoritative. If it is empty, recover the
+    newest non-empty archive instead of hiding existing conversations behind an
+    empty placeholder. Legacy conversation.json remains a final fallback.
     """
     default = {"conversation": [], "memory": {}, "proactive_state": {}}
     path = conversation_file(uid, ai_id)
+
     if os.path.exists(path):
         data = _conversation_payload(load_json(path, default))
-        return data if data is not None else default
+        if data is not None and data.get("conversation"):
+            return data
 
     archived = _latest_conversation_archive(uid, ai_id)
     if archived is not None:
@@ -132,15 +127,19 @@ def load_conversation(uid, ai_id):
     legacy = legacy_conversation_file(uid, ai_id)
     if os.path.exists(legacy):
         data = _conversation_payload(load_json(legacy, default))
-        if data is not None:
+        if data is not None and data.get("conversation"):
             os.makedirs(os.path.dirname(path), exist_ok=True)
             save_json(path, data)
+            return data
+
+    if os.path.exists(path):
+        data = _conversation_payload(load_json(path, default))
+        if data is not None:
             return data
     return default
 
 
 def save_conversation_data(uid, ai_id, data):
-    """Persist all conversation state exclusively in the conversations directory."""
     path = conversation_file(uid, ai_id)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     save_json(path, data)
@@ -162,11 +161,15 @@ def migrate_legacy_ai(uid):
     settings["ai_id"] = ai_id
     save_json(settings_file(uid, ai_id), settings)
     if os.path.exists(old_conversation):
-        save_conversation_data(uid, ai_id, load_json(old_conversation, {"conversation": [], "memory": {}, "proactive_state": {}}))
+        save_conversation_data(uid, ai_id, load_json(old_conversation, default_conversation()))
     account["ais"] = [{"ai_id": ai_id, "created": time.time()}]
     account["active_ai"] = ai_id
     save_json(AIS_FILE, reg)
     return ai_id
+
+
+def default_conversation():
+    return {"conversation": [], "memory": {}, "proactive_state": {}}
 
 
 def ensure_first_ai(uid):
