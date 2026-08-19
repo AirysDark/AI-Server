@@ -1,18 +1,17 @@
 {
   "engine": "piper",
   "source": "https://huggingface.co/rhasspy/piper-voices",
-  "quality": "medium",
   "voices": [
     {"id":"en_US-amy-medium","name":"Amy","gender":"female","language":"English (US)","quality":"medium"},
     {"id":"en_US-kathleen-low","name":"Kathleen","gender":"female","language":"English (US)","quality":"low"},
     {"id":"en_GB-alba-medium","name":"Alba","gender":"female","language":"English (UK)","quality":"medium"},
     {"id":"en_GB-jenny_dioco-medium","name":"Jenny","gender":"female","language":"English (UK)","quality":"medium"},
     {"id":"en_GB-southern_english_female-low","name":"Southern English Female","gender":"female","language":"English (UK)","quality":"low"},
-    {"id":"en_US-ljspeech-medium","name":"LJSpeech","gender":"female","language":"English (US)","quality":"medium"},
-    {"id":"en_US-libritts-high","name":"LibriTTS","gender":"female","language":"English (US)","quality":"high"},
     {"id":"en_US-lessac-medium","name":"Lessac","gender":"female","language":"English (US)","quality":"medium"},
-    {"id":"en_US-arctic-medium","name":"Arctic Female","gender":"female","language":"English (US)","quality":"medium","speaker":"fem"},
-    {"id":"en_GB-semaine-medium","name":"Semaine","gender":"female","language":"English (UK)","quality":"medium","speaker":"poppy"},
+    {"id":"en_US-ljspeech-medium","name":"LJSpeech","gender":"female","language":"English (US)","quality":"medium"},
+    {"id":"en_US-arctic-medium:fem","name":"Arctic Female","gender":"female","language":"English (US)","quality":"medium","speaker":"fem"},
+    {"id":"en_GB-semaine-medium:poppy","name":"Poppy","gender":"female","language":"English (UK)","quality":"medium","speaker":"poppy"},
+    {"id":"en_GB-vctk-medium:p225","name":"VCTK Female","gender":"female","language":"English (UK)","quality":"medium","speaker":"p225"},
     {"id":"en_US-joe-medium","name":"Joe","gender":"male","language":"English (US)","quality":"medium"},
     {"id":"en_US-danny-low","name":"Danny","gender":"male","language":"English (US)","quality":"low"},
     {"id":"en_US-ryan-medium","name":"Ryan","gender":"male","language":"English (US)","quality":"medium"},
@@ -20,8 +19,8 @@
     {"id":"en_GB-alan-medium","name":"Alan","gender":"male","language":"English (UK)","quality":"medium"},
     {"id":"en_GB-northern_english_male-medium","name":"Northern English Male","gender":"male","language":"English (UK)","quality":"medium"},
     {"id":"en_US-kusal-medium","name":"Kusal","gender":"male","language":"English (US)","quality":"medium"},
-    {"id":"en_US-libritts_r-medium","name":"LibriTTS Male","gender":"male","language":"English (US)","quality":"medium"},
-    {"id":"en_US-arctic-medium","name":"Arctic Male","gender":"male","language":"English (US)","quality":"medium","speaker":"awb"},
-    {"id":"en_GB-vctk-medium","name":"VCTK Male","gender":"male","language":"English (UK)","quality":"medium","speaker":"p238"}
+    {"id":"en_US-arctic-medium:awb","name":"Arctic Male","gender":"male","language":"English (US)","quality":"medium","speaker":"awb"},
+    {"id":"en_GB-semaine-medium:spike","name":"Spike","gender":"male","language":"English (UK)","quality":"medium","speaker":"spike"},
+    {"id":"en_GB-vctk-medium:p238","name":"VCTK Male","gender":"male","language":"English (UK)","quality":"medium","speaker":"p238"}
   ]
 }
