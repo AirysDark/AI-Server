@@ -1,0 +1,21 @@
+name: Gene Runtime Windows Build
+
+on:
+  push:
+    paths:
+      - 'Gene/**'
+      - '.github/workflows/gene-windows.yml'
+  pull_request:
+    paths:
+      - 'Gene/**'
+      - '.github/workflows/gene-windows.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Build Gene Runtime
+        run: msbuild Gene/GeneRuntime.sln /m /p:Configuration=Release /p:Platform=x64
