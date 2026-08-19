@@ -1,10 +1,9 @@
 #include "display.h"
 #include "pins.h"
+#include "cartoon_renderer.h"
 #include <SPI.h>
 
-namespace {
-uint32_t frameCounter = 0;
-}
+static CartoonRenderer cartoon;
 
 void AiDisplay::begin() {
     pinMode(Pins::TFT_LED, OUTPUT);
@@ -16,25 +15,11 @@ void AiDisplay::begin() {
     digitalWrite(Pins::TFT_DC, HIGH);
     digitalWrite(Pins::TFT_RESET, HIGH);
     SPI.begin(Pins::SPI_SCK, Pins::SPI_MISO, Pins::SPI_MOSI, Pins::TFT_CS);
+    cartoon.begin();
 }
 
 void AiDisplay::drawCharacter(AnimationState state, uint32_t frame) {
-    // Renderer hook: state/frame are now available to a TFT driver.
-    // Keep this layer independent of the final ILI9488/ST7796 controller.
-    Serial.printf("[CHARACTER] state=%s frame=%lu\n", [&]() -> const char* {
-        switch (state) {
-            case AnimationState::Idle: return "idle";
-            case AnimationState::Thinking: return "thinking";
-            case AnimationState::Talking: return "talking";
-            case AnimationState::Happy: return "happy";
-            case AnimationState::Sad: return "sad";
-            case AnimationState::Angry: return "angry";
-            case AnimationState::Surprised: return "surprised";
-            case AnimationState::Sleepy: return "sleepy";
-            case AnimationState::Offline: return "offline";
-        }
-        return "idle";
-    }(), static_cast<unsigned long>(frame));
+    cartoon.render(state, frame);
 }
 
 void AiDisplay::updateCharacter(AnimationState state, uint32_t frame) {
