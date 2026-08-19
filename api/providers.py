@@ -11,11 +11,18 @@ def provider_name(settings):
     value = str(settings.get("api_provider") or settings.get("provider") or "huggingface").strip().lower()
     if value in ("openai", "openai-compatible", "openai_compatible"):
         return "openai"
+    if value in ("google", "google-ai-studio", "google_ai_studio", "gemini"):
+        return "google"
     return "huggingface"
 
 
 def chat(token, settings, system_prompt, prompt, image_path=None, timeout=45, model=None):
     provider = provider_name(settings)
+    if provider == "google":
+        google_settings = dict(settings)
+        google_settings["api_endpoint"] = google_settings.get("api_endpoint") or "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+        google_settings["api_model"] = google_settings.get("api_model") or "gemini-2.5-flash"
+        return openai_chat(token, google_settings, system_prompt, prompt, image_path=image_path, timeout=timeout)
     if provider == "openai":
         return openai_chat(token, settings, system_prompt, prompt, image_path=image_path, timeout=timeout)
     selected_model = str(model or settings.get("api_model") or "Qwen/Qwen2.5-7B-Instruct")
