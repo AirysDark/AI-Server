@@ -5,6 +5,7 @@ import json
 
 from brain import learn_online_response, process_feedback_queue
 from api import huggingface
+from api import google
 from api.providers import chat as provider_chat, provider_name
 from core.config import USERS_DIR
 
@@ -127,17 +128,41 @@ def ask_online(prompt, settings=None, knowledge="", image_path=None):
 
     if provider in ("openai", "google"):
         if provider == "google":
-            provider_settings = dict(settings)
-            provider_settings["api_endpoint"] = provider_settings.get("api_endpoint") or "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
-            provider_settings["api_model"] = provider_settings.get("api_model") or "gemini-2.5-flash"
-            model = str(provider_settings["api_model"]).strip()
-            health_key = f"google:{provider_settings.get('api_endpoint')}:{model}"
+            configured_model = str(settings.get("api_model") or "").strip()
+            models = []
+            if configured_model:
+                models.append(configured_model)
+            if image_path:
+                models += [m for m in google.VISION_MODELS if m not in models]
+            else:
+                models += [m for m in google.TEXT_MODELS if m not in models]
+            discovered = google.discover_models(token)
+            for model in discovered:
+                if model not in models:
+                    models.append(model)
+            if not models:
+                models = list(google.VISION_MODELS if image_path else google.TEXT_MODELS)
             label = "Google AI Studio"
-        else:
-            provider_settings = settings
-            model = str(settings.get("api_model") or os.getenv("AI_OPENAI_MODEL") or "gpt-4o-mini").strip()
-            health_key = f"openai:{settings.get('api_endpoint') or 'default'}:{model}"
-            label = "OpenAI-compatible"
+            for model in models:
+                health_key = f"google:{model}"
+                if not _available(health_key):
+                    continue
+                try:
+                    provider_settings = dict(settings)
+                    reply = provider_chat(token, provider_settings, system_prompt, prompt, image_path=image_path, model=model)
+                    _mark_success(health_key)
+                    learn_online_response(prompt, reply, settings)
+                    print("ONLINE AI USING GOOGLE AI STUDIO MODEL:", model)
+                    return reply
+                except Exception as e:
+                    _mark_failure(health_key, e)
+                    print("ONLINE AI GOOGLE AI STUDIO MODEL FAILED:", model, e)
+            return None
+
+        provider_settings = settings
+        model = str(settings.get("api_model") or os.getenv("AI_OPENAI_MODEL") or "gpt-4o-mini").strip()
+        health_key = f"openai:{settings.get('api_endpoint') or 'default'}:{model}"
+        label = "OpenAI-compatible"
         if not _available(health_key):
             return None
         try:
