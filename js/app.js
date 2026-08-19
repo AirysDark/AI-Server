@@ -24,12 +24,22 @@ async function loadSelectedChat(chatId){
  if(!id)throw Error('Missing conversation ID');
  const result=await apiPost('/api/chats/open',{conversation_id:id});
  if(!result||result.ok===false)throw Error(result?.error||'Could not open conversation');
- // The archive is returned directly as `conversation`; `data` is only a
- // compatibility wrapper. Never rewrite or copy the archive to current.json.
- let archive=result;
- if(archive.data&&typeof archive.data==='object'&&!Array.isArray(archive.data))archive=archive.data;
- let conversation=archive.conversation;
- if(!Array.isArray(conversation)&&result.data&&Array.isArray(result.data.conversation))conversation=result.data.conversation;
+
+ // Accept the archive in its native form, or the API's compatibility wrapper.
+ // The archive itself remains the source of truth; current.json is never used.
+ let conversation=Array.isArray(result.conversation)?result.conversation:null;
+ if(!conversation&&result.data&&typeof result.data==='object')
+  conversation=Array.isArray(result.data.conversation)?result.data.conversation:null;
+ if(!conversation&&result.archive&&typeof result.archive==='object')
+  conversation=Array.isArray(result.archive.conversation)?result.archive.conversation:null;
+
+ // The selected-chat cookie is also set by chats.js. If the open response is
+ // wrapped differently by an older server process, /api/user still loads that
+ // exact selected C-*.json archive through the existing direct-archive bridge.
+ if(!conversation){
+  const fallback=await apiGet('/api/user');
+  if(fallback&&Array.isArray(fallback.conversation))conversation=fallback.conversation;
+ }
  if(!Array.isArray(conversation))throw Error('Conversation archive has invalid format');
  const chat=document.getElementById('chat');
  if(!chat)throw Error('Chat element not found');
