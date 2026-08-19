@@ -15,7 +15,7 @@ struct Morph { std::string name; std::string englishName; int panel{}; uint8_t t
 class Model {
 public:
     bool loadPmx(const std::string& path);
-    bool loadTextures(const std::string& directory);
+    bool loadTextures(const std::string& directory) { _textureDirectory = directory; return true; }
     bool loaded() const noexcept { return _loaded; }
     float pmxVersion() const noexcept { return _version; }
     uint32_t vertexCount() const noexcept { return static_cast<uint32_t>(_vertices.size()); }
