@@ -1,6 +1,6 @@
 """Administrator authentication and account/storage management."""
 from __future__ import annotations
-import hashlib,hmac,json,os,secrets,shutil,time
+import hashlib,hmac,os,secrets,shutil,time
 from core.config import STORAGE_DIR,USERS_DIR
 from core.auth import hash_password
 from core.storage import load_json,save_json
@@ -47,24 +47,10 @@ def dashboard(handler):
  for uid,account in accounts.items():
   ais=server.list_ais(uid);result.append({"user_id":uid,"email":account.get("email"),"username":account.get("username"),"banned":bool(account.get("banned",False)),"ai_count":len(ais),"ais":ais})
  return {"ok":True,"accounts":result,"storage_dir":STORAGE_DIR,"user_storage_dir":USERS_DIR},200
-def _user_root(uid):return os.path.abspath(os.path.join(USERS_DIR,os.path.basename(uid)))
-def _safe_target(uid,relative):
- root=_user_root(uid);target=os.path.abspath(os.path.join(root,str(relative or "").lstrip("/")))
- return target if target.startswith(root+os.sep) else None
-def files(handler,uid=None,relative=""):
- root=os.path.abspath(USERS_DIR if not uid else _user_root(uid));target=os.path.abspath(os.path.join(root,str(relative or "").lstrip("/")))
- if not target.startswith(root+os.sep) and target!=root:return {"ok":False,"error":"Invalid path"},400
- if not os.path.isdir(target):return {"ok":False,"error":"Directory not found"},404
- items=[]
- for name in sorted(os.listdir(target),key=str.lower):
-  p=os.path.join(target,name);items.append({"name":name,"directory":os.path.isdir(p),"size":os.path.getsize(p) if os.path.isfile(p) else None})
- return {"ok":True,"path":os.path.relpath(target,USERS_DIR),"items":items},200
-def read_json_file(uid,relative):
- target=_safe_target(uid,relative)
- if not target or not os.path.isfile(target):return {"ok":False,"error":"File not found"},404
- if not target.lower().endswith(".json"):return {"ok":False,"error":"Only JSON files can be viewed here"},400
- try:return {"ok":True,"data":_read(target,{})},200
- except Exception as exc:return {"ok":False,"error":str(exc)},500
+def account_detail(uid):
+ server=_server_module();account=server.get_accounts().get("users",{}).get(uid)
+ if not account:return {"ok":False,"error":"Account not found"},404
+ return {"ok":True,"user_id":uid,"email":account.get("email"),"username":account.get("username"),"banned":bool(account.get("banned",False)),"account":{k:v for k,v in account.items() if k!="password"},"ais":server.list_ais(uid)},200
 def update_account(uid,data):
  server=_server_module();accounts=server.get_accounts();account=accounts.setdefault("users",{}).get(uid)
  if not account:return {"ok":False,"error":"Account not found"},404
@@ -78,6 +64,22 @@ def update_account(uid,data):
   if len(new)<6:return {"ok":False,"error":"Password must be at least 6 characters"},400
   account["password"]=hash_password(new);account["must_change_password"]=False
  server.save_json(server.AUTH_FILE,accounts);return result,200
+def _user_root(uid):return os.path.abspath(os.path.join(USERS_DIR,os.path.basename(uid)))
+def _safe_target(uid,relative):
+ root=_user_root(uid);target=os.path.abspath(os.path.join(root,str(relative or "").lstrip("/")));return target if target.startswith(root+os.sep) else None
+def files(handler,uid=None,relative=""):
+ root=os.path.abspath(USERS_DIR if not uid else _user_root(uid));target=os.path.abspath(os.path.join(root,str(relative or "").lstrip("/")))
+ if not target.startswith(root+os.sep) and target!=root:return {"ok":False,"error":"Invalid path"},400
+ if not os.path.isdir(target):return {"ok":False,"error":"Directory not found"},404
+ items=[]
+ for name in sorted(os.listdir(target),key=str.lower):
+  p=os.path.join(target,name);items.append({"name":name,"directory":os.path.isdir(p),"size":os.path.getsize(p) if os.path.isfile(p) else None})
+ return {"ok":True,"path":os.path.relpath(target,USERS_DIR),"items":items},200
+def read_json_file(uid,relative):
+ target=_safe_target(uid,relative)
+ if not target or not os.path.isfile(target):return {"ok":False,"error":"File not found"},404
+ if not target.lower().endswith(".json"):return {"ok":False,"error":"Only JSON files can be viewed here"},400
+ return {"ok":True,"data":_read(target,{})},200
 def update_json_file(uid,relative,data):
  target=_safe_target(uid,relative)
  if not target or not os.path.isfile(target):return {"ok":False,"error":"File not found"},404
@@ -93,13 +95,11 @@ def delete_account(uid):
  users.pop(uid,None);server.save_json(server.AUTH_FILE,accounts);shutil.rmtree(_user_root(uid),ignore_errors=True);return {"ok":True},200
 def handle_get(handler,path,query):
  if not path.startswith("/api/admin/"):return False
- if path=="/api/admin/me" and not admin_user(handler):handler.send_json({"ok":False,"error":"Administrator authentication required"},status=401);return True
  if not admin_user(handler):handler.send_json({"ok":False,"error":"Administrator authentication required"},status=401);return True
  if path=="/api/admin/me":
   a=ensure_admin();handler.send_json({"ok":True,"username":a.get("username","admin"),"must_change_password":bool(a.get("must_change_password",False))});return True
  if path=="/api/admin/dashboard":d,s=dashboard(handler);handler.send_json(d,status=s);return True
- if path=="/api/admin/account":
-  d,s=account_detail((query.get("uid") or [""])[0]);handler.send_json(d,status=s);return True
+ if path=="/api/admin/account":d,s=account_detail((query.get("uid") or [""])[0]);handler.send_json(d,status=s);return True
  if path=="/api/admin/files":d,s=files(handler,(query.get("uid") or [None])[0],(query.get("path") or [""])[0]);handler.send_json(d,status=s);return True
  if path=="/api/admin/file/read":d,s=read_json_file((query.get("uid") or [""])[0],(query.get("path") or [""])[0]);handler.send_json(d,status=s);return True
  return False
