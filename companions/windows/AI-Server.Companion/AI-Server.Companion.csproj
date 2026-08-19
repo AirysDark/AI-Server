@@ -14,7 +14,8 @@
     <Resource Include="..\icon.png" Link="icon.png" />
   </ItemGroup>
 
-  <Target Name="GenerateApplicationIcon" BeforeTargets="GenerateWin32Resources">
+  <!-- The compiler requires ApplicationIcon to exist before Win32 resources are generated. -->
+  <Target Name="GenerateApplicationIcon" BeforeTargets="PrepareForBuild;GenerateWin32Resources">
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)GenerateIcon.ps1&quot;" />
   </Target>
 </Project>
