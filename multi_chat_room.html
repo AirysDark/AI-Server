@@ -35,54 +35,43 @@ let state={room:null,ais:[]};
 let loading=false;
 let pollTimer=null;
 let lastSignature='';
-const POLL_MS=1200;
+const POLL_MS=500;
 const $=id=>document.getElementById(id);
 async function api(path,body,method='POST'){const r=await fetch(path,{method,credentials:'same-origin',cache:'no-store',headers:method==='POST'?{'Content-Type':'application/json'}:undefined,body:method==='POST'?JSON.stringify(body||{}):undefined});let j={};try{j=await r.json()}catch(e){}if(!r.ok)throw new Error(j.error||`Request failed (${r.status})`);return j}
 function esc(v){const d=document.createElement('div');d.innerText=v??'';return d.innerHTML}
 function cid(){return new URLSearchParams(location.search).get('conversation')||''}
-function signature(room){return JSON.stringify({updated:room?.updated||0,ais:room?.ais||[],count:room?.conversation?.length||0,last:room?.conversation?.slice(-1)[0]?.time||0})}
+function signature(room){return JSON.stringify({updated:room?.updated||0,ais:room?.ais||[],pending:room?.pending_ai||[],count:room?.conversation?.length||0,last:room?.conversation?.slice(-1)[0]?.time||0})}
 function selectedAiNames(){const selected=new Set(state.room?.ais||[]);return state.ais.filter(ai=>selected.has(ai.ai_id)).map(ai=>ai.ai_name)}
+function pendingAiNames(){const pending=new Set(state.room?.pending_ai||[]);return state.ais.filter(ai=>pending.has(ai.ai_id)).map(ai=>ai.ai_name)}
 function setTyping(show,names=[]){const indicator=$('typingIndicator');if(!indicator)return;if(!show){indicator.classList.add('hidden');return}const clean=names.filter(Boolean);$('typingText').innerText=clean.length===1?`${clean[0]} is typing...`:clean.length>1?`${clean.join(', ')} are typing...`:'AI is typing...';indicator.classList.remove('hidden');const chat=$('chat');chat.scrollTop=chat.scrollHeight}
-async function load(initial=false){try{if(!cid()){location.href='multi_chat.html';return}const all=initial?await api('/api/multi-chats',null,'GET'):null;if(all)state.ais=all.ais||[];const j=await api('/api/multi-chats/open?conversation_id='+encodeURIComponent(cid()),null,'GET');const next=j.room;const changed=signature(next)!==lastSignature;if(initial||changed){state.room=next;lastSignature=signature(next);render();}setLive(true)}catch(e){setLive(false);if(initial)$('error').innerText=e.message}}
-function render(){if(!state.room)return;$('roomHeading').innerText=state.room.title||'Multiple Chat';$('roomMeta').innerText=`${state.room.ais.length} AI${state.room.ais.length===1?'':'s'} · ${state.room.conversation_id}`;renderParticipants();renderConversation()}
+function syncTyping(){const names=pendingAiNames();setTyping(names.length>0,names)}
+async function load(initial=false){try{if(!cid()){location.href='multi_chat.html';return}const all=initial?await api('/api/multi-chats',null,'GET'):null;if(all)state.ais=all.ais||[];const j=await api('/api/multi-chats/open?conversation_id='+encodeURIComponent(cid()),null,'GET');const next=j.room;const changed=signature(next)!==lastSignature;if(initial||changed){state.room=next;lastSignature=signature(next);render();}else{state.room=next;syncTyping()}setLive(true)}catch(e){setLive(false);if(initial)$('error').innerText=e.message}}
+function render(){if(!state.room)return;$('roomHeading').innerText=state.room.title||'Multiple Chat';$('roomMeta').innerText=`${state.room.ais.length} AI${state.room.ais.length===1?'':'s'} · ${state.room.conversation_id}`;renderParticipants();renderConversation();syncTyping()}
 function renderParticipants(){const selected=new Set(state.room.ais);$('participants').innerHTML=state.ais.map(ai=>`<label class="ai-choice"><input type="checkbox" value="${ai.ai_id}" ${selected.has(ai.ai_id)?'checked':''}><img class="avatar" src="${ai.profile_photo||'profile/default.png'}" onerror="this.src='profile/default.png'"><span>${esc(ai.ai_name)}</span></label>`).join('')}
-function renderConversation(){const el=$('chat');const atBottom=el.scrollHeight-el.scrollTop-el.clientHeight<80;el.innerHTML=state.room.conversation.map(x=>x.type==='user'?`<div class="msg user"><div class="who">You</div>${esc(x.text)}</div>`:`<div class="msg ai"><div class="who">${esc(x.ai_name)}${x.mode==='ai_to_ai'?' · AI to AI':''}</div>${esc(x.text)}</div>`).join('');if(atBottom)el.scrollTop=el.scrollHeight}
+function renderConversation(){const el=$('chat');const atBottom=el.scrollHeight-el.scrollTop-el.clientHeight<100;el.innerHTML=state.room.conversation.map(x=>x.type==='user'?`<div class="msg user"><div class="who">You</div>${esc(x.text)}</div>`:`<div class="msg ai"><div class="who">${esc(x.ai_name)}${x.mode==='ai_to_ai'?' · AI to AI':''}</div>${esc(x.text)}</div>`).join('');if(atBottom)el.scrollTop=el.scrollHeight}
 function setLive(ok){$('liveStatus').className=ok?'live':'live offline';$('liveStatus').innerText=ok?'● Live updates enabled':'● Reconnecting...'}
 async function saveParticipants(){const ids=[...document.querySelectorAll('#participants input:checked')].map(x=>x.value);if(!ids.length){alert('At least one AI must remain.');return}try{const j=await api('/api/multi-chats/participants',{conversation_id:state.room.conversation_id,ais:ids});state.room=j.room;lastSignature=signature(state.room);render()}catch(e){$('error').innerText=e.message}}
 async function sendMessage(){
  if(loading)return;
  const input=$('message'),text=input.value.trim();
- if(!text)return;
- if(!state.room||!state.room.conversation_id)return;
- input.value='';
- $('error').innerText='';
- loading=true;
+ if(!text||!state.room?.conversation_id)return;
+ input.value='';$('error').innerText='';loading=true;
  const sentAt=Date.now()/1000;
- // Show the user's message immediately. Do not wait for the AI/server response.
  state.room.conversation=Array.isArray(state.room.conversation)?state.room.conversation:[];
  state.room.conversation.push({type:'user',text,time:sentAt,pending:true});
  renderConversation();
- setTyping(true,selectedAiNames());
  try{
   const j=await api('/api/multi-chats/message',{conversation_id:state.room.conversation_id,message:text});
-  // Replace the optimistic display with the authoritative server conversation.
-  state.room=j.room;
-  lastSignature=signature(state.room);
-  render();
+  state.room=j.room;lastSignature=signature(state.room);render();
  }catch(e){
-  // Remove only the optimistic copy if the send failed.
   state.room.conversation=state.room.conversation.filter(x=>!(x.pending&&x.text===text&&x.time===sentAt));
-  renderConversation();
-  $('error').innerText=e.message;
- }finally{
-  loading=false;
-  setTyping(false);
- }
+  renderConversation();$('error').innerText=e.message;
+ }finally{loading=false;syncTyping()}
 }
-async function aiTalk(){if(loading)return;loading=true;setTyping(true,selectedAiNames());try{const j=await api('/api/multi-chats/talk',{conversation_id:state.room.conversation_id});state.room=j.room;lastSignature=signature(state.room);render()}catch(e){$('error').innerText=e.message}finally{loading=false;setTyping(false)}}
+async function aiTalk(){if(loading)return;loading=true;$('error').innerText='';try{const j=await api('/api/multi-chats/talk',{conversation_id:state.room.conversation_id});state.room=j.room;lastSignature=signature(state.room);render()}catch(e){$('error').innerText=e.message}finally{loading=false;syncTyping()}}
 async function renameCurrent(){const title=prompt('Conversation name:',state.room?.title||'');if(title===null)return;try{await api('/api/multi-chats/rename',{conversation_id:state.room.conversation_id,title});await load(true)}catch(e){alert(e.message)}}
 async function deleteCurrent(){if(!confirm('Delete this multiple-chat conversation?'))return;try{await api('/api/multi-chats/delete',{conversation_id:state.room.conversation_id});stopPolling();location.href='multi_chat.html'}catch(e){alert(e.message)}}
-async function poll(){if(document.hidden||loading)return;await load(false)}
+async function poll(){if(document.hidden)return;await load(false)}
 function startPolling(){stopPolling();pollTimer=setInterval(poll,POLL_MS)}
 function stopPolling(){if(pollTimer){clearInterval(pollTimer);pollTimer=null}}
 document.addEventListener('visibilitychange',()=>{if(document.hidden)stopPolling();else{poll();startPolling()}});
