@@ -6,28 +6,21 @@ HF_URL = "https://router.huggingface.co/v1/chat/completions"
 HF_MODELS_URL = "https://router.huggingface.co/v1/models"
 
 TEXT_MODELS = [
-    os.getenv("AI_AI_MODEL", "Qwen/Qwen2.5-7B-Instruct"),
-    "Qwen/Qwen3-8B", "Qwen/Qwen3-4B-Instruct-2507", "Qwen/Qwen2.5-7B-Instruct",
-    "Qwen/Qwen2.5-3B-Instruct", "Qwen/Qwen2.5-1.5B-Instruct",
-    "meta-llama/Llama-3.3-70B-Instruct", "meta-llama/Llama-3.1-8B-Instruct",
-    "meta-llama/Llama-3.2-3B-Instruct", "microsoft/Phi-3.5-mini-instruct",
-    "google/gemma-3-4b-it", "google/gemma-2-9b-it",
-    "mistralai/Mistral-7B-Instruct-v0.3", "HuggingFaceH4/zephyr-7b-beta",
-    "openai/gpt-oss-20b", "openai/gpt-oss-120b",
-    "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B", "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
-    "moonshotai/Kimi-K2-Instruct", "zai-org/GLM-4.5-Air",
+    os.getenv("AI_AI_MODEL", "Qwen/Qwen2.5-7B-Instruct-1M"),
+    "Qwen/Qwen2.5-7B-Instruct-1M", "Qwen/Qwen3-8B", "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b", "Qwen/Qwen3-4B-Thinking-2507", "Qwen/Qwen2.5-7B-Instruct",
+    "meta-llama/Llama-3.1-8B-Instruct", "google/gemma-2-2b-it",
 ]
-
 VISION_MODELS = [
     os.getenv("AI_AI_VISION_MODEL", "Qwen/Qwen2.5-VL-7B-Instruct"),
     "Qwen/Qwen2.5-VL-7B-Instruct", "Qwen/Qwen2.5-VL-3B-Instruct",
     "Qwen/Qwen2-VL-7B-Instruct", "meta-llama/Llama-3.2-11B-Vision-Instruct",
-    "meta-llama/Llama-3.2-90B-Vision-Instruct", "google/gemma-3-12b-it",
-    "google/gemma-3-4b-it", "mistralai/Pixtral-12B-2409",
+    "google/gemma-3-4b-it",
 ]
 
 
 def discover_models(token, vision=False):
+    """Return models that currently advertise at least one live provider."""
     try:
         r = requests.get(HF_MODELS_URL, headers={"Authorization": f"Bearer {token}"}, timeout=15)
         if r.status_code >= 400:
@@ -36,13 +29,19 @@ def discover_models(token, vision=False):
         models = data.get("data", data if isinstance(data, list) else [])
         result = []
         for item in models:
-            model_id = item.get("id") if isinstance(item, dict) else item
+            if not isinstance(item, dict):
+                continue
+            model_id = item.get("id")
             if not model_id:
                 continue
             text = model_id.lower()
             is_vision = any(x in text for x in ("vl", "vision", "pixtral", "gemma-3"))
-            if is_vision == vision:
-                result.append(model_id)
+            if is_vision != vision:
+                continue
+            providers = item.get("providers") or []
+            if providers and not any(str(p.get("status", "")).lower() == "live" for p in providers if isinstance(p, dict)):
+                continue
+            result.append(model_id)
         return result[:100]
     except Exception:
         return []
@@ -61,6 +60,18 @@ def encode_image(image_path):
         return None
     with open(image_path, "rb") as f:
         return base64.b64encode(f.read()).decode("utf-8")
+
+
+def _model_candidates(models, image_path):
+    preferred = VISION_MODELS if image_path else TEXT_MODELS
+    out = []
+    seen = set()
+    for model in preferred + list(models or []):
+        if not model or model in seen:
+            continue
+        seen.add(model)
+        out.append(model)
+    return out
 
 
 def chat(token, model, system_prompt, prompt, image_path=None, timeout=45):
@@ -89,21 +100,17 @@ def chat(token, model, system_prompt, prompt, image_path=None, timeout=45):
         )
     except requests.RequestException as e:
         raise RuntimeError(f"Hugging Face connection error: {e}") from e
-
     try:
         data = response.json()
     except Exception:
         data = {"error": response.text[:500]}
-
     if response.status_code >= 400:
         error = data.get("error") if isinstance(data, dict) else data
         if isinstance(error, dict):
             error = error.get("message") or error.get("error") or str(error)
         raise RuntimeError(f"Hugging Face HTTP {response.status_code}: {str(error)[:500]}")
-
     if not isinstance(data, dict) or not data.get("choices"):
         raise RuntimeError(f"Hugging Face returned no choices: {str(data)[:500]}")
-
     message = data["choices"][0].get("message", {})
     content = message.get("content") if isinstance(message, dict) else None
     if isinstance(content, list):
