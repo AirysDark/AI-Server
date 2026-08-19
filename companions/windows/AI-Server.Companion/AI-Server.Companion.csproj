@@ -9,7 +9,12 @@
     <RootNamespace>AiServer.Companion</RootNamespace>
     <ApplicationIcon>..\icon.ico</ApplicationIcon>
   </PropertyGroup>
+
   <ItemGroup>
     <Resource Include="..\icon.png" Link="icon.png" />
   </ItemGroup>
+
+  <Target Name="GenerateApplicationIcon" BeforeTargets="GenerateWin32Resources">
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)GenerateIcon.ps1&quot;" />
+  </Target>
 </Project>
