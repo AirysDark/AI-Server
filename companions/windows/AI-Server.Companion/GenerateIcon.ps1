@@ -1,7 +1,7 @@
 Add-Type -AssemblyName System.Drawing
 
-$pngPath = Join-Path $PSScriptRoot 'icon.png'
-$icoPath = Join-Path $PSScriptRoot 'icon.ico'
+$pngPath = Join-Path $PSScriptRoot '..\icon.png'
+$icoPath = Join-Path $PSScriptRoot '..\icon.ico'
 
 if (-not (Test-Path $pngPath)) {
     throw "Missing icon.png: $pngPath"
@@ -9,7 +9,6 @@ if (-not (Test-Path $pngPath)) {
 
 $bitmap = [System.Drawing.Bitmap]::new($pngPath)
 try {
-    $size = [Math]::Min($bitmap.Width, $bitmap.Height)
     $square = [System.Drawing.Bitmap]::new(256, 256)
     try {
         $graphics = [System.Drawing.Graphics]::FromImage($square)
