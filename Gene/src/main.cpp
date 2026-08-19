@@ -32,11 +32,15 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    // PMX texture references are resolved relative to the PMX folder.
+    model.loadTextures(pmxPath.parent_path().empty() ? std::filesystem::current_path().string() : pmxPath.parent_path().string());
+
     std::cout << "PMX loaded successfully.\n"
               << "Version:   " << model.pmxVersion() << "\n"
               << "Vertices:  " << model.vertexCount() << "\n"
               << "Indices:   " << model.indexCount() << "\n"
               << "Materials: " << model.materialCount() << "\n"
+              << "Textures:  " << model.textures().size() << "\n"
               << "Bones:     " << model.bones().size() << "\n"
               << "Morphs:    " << model.morphs().size() << "\n\n";
 
@@ -63,11 +67,6 @@ int main(int argc, char** argv)
         renderer.pollEvents();
         player.update(delta);
         renderer.draw(model);
-
-        // draw() paints the current frame directly. Do not invalidate the
-        // window here: doing so schedules WM_PAINT immediately after the
-        // frame and the default window paint was clearing the rendered mesh,
-        // producing the visible load/unload flicker.
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
     }
 
