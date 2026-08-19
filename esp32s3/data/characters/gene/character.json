@@ -1,0 +1,24 @@
+{
+  "id": "gene",
+  "name": "Gené",
+  "display_name": "ジェネ",
+  "series": "Phantasy Star Online 2",
+  "renderer": "cartoon",
+  "resolution": [320, 480],
+  "animations": {
+    "idle": "idle",
+    "blink": "blink",
+    "talking": "talking",
+    "thinking": "thinking",
+    "happy": "happy",
+    "excited": "excited",
+    "curious": "curious",
+    "surprised": "surprised",
+    "sad": "sad",
+    "angry": "angry",
+    "sleepy": "sleepy",
+    "greeting": "greeting",
+    "confused": "confused",
+    "offline": "offline"
+  }
+}
