@@ -4,7 +4,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>AI - Multiple Chat</title>
 <style>
-*{box-sizing:border-box}body{margin:0;background:#101014;color:#eee;font-family:Arial,sans-serif;padding:12px}.wrap{max-width:850px;margin:2vh auto}.card{background:#181820;border:1px solid #333;border-radius:18px;padding:18px;margin-bottom:12px}h1{margin:4px 0 8px;font-size:30px}.muted{color:#aaa}.top{display:flex;gap:8px;flex-wrap:wrap}.top button{flex:1;min-width:130px}button{background:#ff5c9a;color:#fff;border:0;border-radius:10px;padding:11px 15px;font-size:15px;cursor:pointer}.secondary{background:#444}.danger{background:#7a3333}.room{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#111118;border:1px solid #333;border-radius:12px;padding:12px;margin:8px 0}.room.active{border-color:#ff5c9a}.room-info{min-width:0}.room-title{font-weight:bold;font-size:17px;overflow-wrap:anywhere}.room-meta{font-size:12px;color:#aaa;margin-top:4px}.room-actions{display:flex;gap:6px;flex-wrap:wrap}.participants{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-top:10px}.ai-choice{background:#111118;border:1px solid #333;border-radius:10px;padding:10px;display:flex;gap:8px;align-items:center}.ai-choice input{width:18px;height:18px;accent-color:#ff5c9a}.avatar{width:38px;height:38px;border-radius:50%;object-fit:cover;border:2px solid #ff77aa}.chat{height:52vh;min-height:320px;overflow-y:auto;background:#0d0d12;border:1px solid #333;border-radius:12px;padding:12px;margin-top:12px}.msg{margin:8px 0;padding:10px 12px;border-radius:12px;white-space:pre-wrap;overflow-wrap:anywhere}.user{background:#30202a;margin-left:10%}.ai{background:#202027;margin-right:10%}.who{font-size:12px;color:#ff82b2;font-weight:bold;margin-bottom:4px}.compose{display:flex;gap:8px;margin-top:10px}.compose textarea{flex:1;resize:vertical;min-height:52px;background:#111118;color:#fff;border:1px solid #444;border-radius:10px;padding:11px;font:inherit}.actions{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}.error{color:#ff7777;margin-top:10px}.empty{text-align:center;color:#aaa;padding:20px}.hidden{display:none}@media(max-width:600px){.room{align-items:flex-start;flex-direction:column}.room-actions{width:100%}.room-actions button{flex:1}.compose{flex-direction:column}.user,.ai{margin-left:0;margin-right:0}}
+*{box-sizing:border-box}body{margin:0;background:#101014;color:#eee;font-family:Arial,sans-serif;padding:12px}.wrap{max-width:850px;margin:2vh auto}.card{background:#181820;border:1px solid #333;border-radius:18px;padding:18px;margin-bottom:12px}h1{margin:4px 0 8px;font-size:30px}.muted{color:#aaa}.top{display:flex;gap:8px;flex-wrap:wrap}.top button{flex:1;min-width:130px}button{background:#ff5c9a;color:#fff;border:0;border-radius:10px;padding:11px 15px;font-size:15px;cursor:pointer}.secondary{background:#444}.danger{background:#7a3333}.room{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#111118;border:1px solid #333;border-radius:12px;padding:12px;margin:8px 0}.room-info{min-width:0}.room-title{font-weight:bold;font-size:17px;overflow-wrap:anywhere}.room-meta{font-size:12px;color:#aaa;margin-top:4px}.room-actions{display:flex;gap:6px;flex-wrap:wrap}.error{color:#ff7777;margin-top:10px}.empty{text-align:center;color:#aaa;padding:20px}@media(max-width:600px){.room{align-items:flex-start;flex-direction:column}.room-actions{width:100%}.room-actions button{flex:1}}
 </style>
 </head>
 <body>
@@ -12,46 +12,26 @@
 <div class="card">
   <h1>Multiple Chat</h1>
   <div class="muted">Create separate conversations and choose which of your AIs participate. This does not change your normal single-AI chats.</div>
-  <div class="top" style="margin-top:14px">
-    <button onclick="newRoom()">+ New Conversation</button>
-    <button class="secondary" onclick="location.href='select_ai.html'">Select Your AI</button>
-  </div>
+  <div class="top" style="margin-top:14px"><button onclick="newRoom()">+ New Conversation</button><button class="secondary" onclick="location.href='select_ai.html'">Select Your AI</button></div>
+  <div id="error" class="error"></div>
 </div>
-<div class="card" id="roomsCard">
+<div class="card">
   <h2>Conversations</h2>
   <div id="rooms"></div>
 </div>
-<div class="card hidden" id="chatCard">
-  <h2 id="roomHeading">Conversation</h2>
-  <div class="muted">Choose participants. At least one AI must remain.</div>
-  <div id="participants" class="participants"></div>
-  <div class="actions"><button onclick="saveParticipants()">Save Participants</button><button class="secondary" onclick="renameCurrent()">Rename</button><button class="danger" onclick="deleteCurrent()">Delete</button></div>
-  <div id="chat" class="chat"></div>
-  <div class="compose"><textarea id="message" placeholder="Talk to the participating AIs..."></textarea><button onclick="sendMessage()">Send</button></div>
-  <div class="actions"><button onclick="aiTalk()">Let AIs Talk</button><button class="secondary" onclick="closeRoom()">Back to Conversations</button></div>
-  <div id="error" class="error"></div>
-</div>
 </div>
 <script>
-let state={rooms:[],ais:[],room:null};
+let rooms=[];
 const $=id=>document.getElementById(id);
 async function api(path,body,method='POST'){const r=await fetch(path,{method,credentials:'same-origin',headers:method==='POST'?{'Content-Type':'application/json'}:undefined,body:method==='POST'?JSON.stringify(body||{}):undefined});let j={};try{j=await r.json()}catch(e){}if(!r.ok)throw new Error(j.error||`Request failed (${r.status})`);return j}
 function esc(v){const d=document.createElement('div');d.innerText=v??'';return d.innerHTML}
-async function load(){try{const j=await api('/api/multi-chats',null,'GET');state.rooms=j.rooms||[];state.ais=j.ais||[];renderRooms();const cid=new URLSearchParams(location.search).get('conversation');if(cid)await openRoom(cid)}catch(e){$('error').innerText=e.message}}
-function renderRooms(){const el=$('rooms');if(!state.rooms.length){el.innerHTML='<div class="empty">No multiple-chat conversations yet.</div>';return}el.innerHTML=state.rooms.map(r=>`<div class="room ${state.room&&state.room.conversation_id===r.conversation_id?'active':''}"><div class="room-info"><div class="room-title">${esc(r.title)}</div><div class="room-meta">${r.ais.length} AI${r.ais.length===1?'':'s'} · ${esc(r.conversation_id)}</div></div><div class="room-actions"><button onclick="openRoom('${r.conversation_id}')">Open</button><button class="secondary" onclick="renameRoom('${r.conversation_id}')">Rename</button><button class="danger" onclick="deleteRoom('${r.conversation_id}')">Delete</button></div></div>`).join('')}
-async function newRoom(){try{const j=await api('/api/multi-chats/new',{});state.rooms.unshift(j.room);await openRoom(j.room.conversation_id)}catch(e){alert(e.message)}}
-async function openRoom(cid){try{const j=await api('/api/multi-chats/open?conversation_id='+encodeURIComponent(cid),null,'GET');state.room=j.room;history.replaceState(null,'','multi_chat.html?conversation='+encodeURIComponent(cid));$('chatCard').classList.remove('hidden');renderRooms();renderParticipants();renderConversation();$('roomHeading').innerText=state.room.title}catch(e){$('error').innerText=e.message}}
-function renderParticipants(){const selected=new Set(state.room.ais);$('participants').innerHTML=state.ais.map(ai=>`<label class="ai-choice"><input type="checkbox" value="${ai.ai_id}" ${selected.has(ai.ai_id)?'checked':''}><img class="avatar" src="${ai.profile_photo||'profile/default.png'}" onerror="this.src='profile/default.png'"><span>${esc(ai.ai_name)}</span></label>`).join('')}
-function renderConversation(){const el=$('chat');el.innerHTML=state.room.conversation.map(x=>x.type==='user'?`<div class="msg user"><div class="who">You</div>${esc(x.text)}</div>`:`<div class="msg ai"><div class="who">${esc(x.ai_name)}${x.mode==='ai_to_ai'?' · AI to AI':''}</div>${esc(x.text)}</div>`).join('');el.scrollTop=el.scrollHeight}
-async function saveParticipants(){const ids=[...document.querySelectorAll('#participants input:checked')].map(x=>x.value);if(!ids.length){alert('At least one AI must remain.');return}try{const j=await api('/api/multi-chats/participants',{conversation_id:state.room.conversation_id,ais:ids});state.room=j.room;renderParticipants();renderConversation();await load()}catch(e){$('error').innerText=e.message}}
-async function sendMessage(){const input=$('message');const text=input.value.trim();if(!text)return;input.value='';try{const j=await api('/api/multi-chats/message',{conversation_id:state.room.conversation_id,message:text});state.room=j.room;renderConversation();await load()}catch(e){$('error').innerText=e.message}}
-async function aiTalk(){try{const j=await api('/api/multi-chats/talk',{conversation_id:state.room.conversation_id});state.room=j.room;renderConversation();await load()}catch(e){$('error').innerText=e.message}}
-async function renameRoom(cid){const room=state.rooms.find(x=>x.conversation_id===cid);const title=prompt('Conversation name:',room?.title||'');if(title===null)return;try{await api('/api/multi-chats/rename',{conversation_id:cid,title});await load();if(state.room?.conversation_id===cid){state.room=(await api('/api/multi-chats/open?conversation_id='+encodeURIComponent(cid),null,'GET')).room;$('roomHeading').innerText=state.room.title}}catch(e){alert(e.message)}}
-async function renameCurrent(){if(state.room)await renameRoom(state.room.conversation_id)}
-async function deleteRoom(cid){if(!confirm('Delete this multiple-chat conversation?'))return;try{await api('/api/multi-chats/delete',{conversation_id:cid});if(state.room?.conversation_id===cid)closeRoom();await load()}catch(e){alert(e.message)}}
-async function deleteCurrent(){if(state.room)await deleteRoom(state.room.conversation_id)}
-function closeRoom(){state.room=null;$('chatCard').classList.add('hidden');history.replaceState(null,'','multi_chat.html');renderRooms()}
-$('message').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage()}});load();
+async function load(){try{const j=await api('/api/multi-chats',null,'GET');rooms=j.rooms||[];render()}catch(e){$('error').innerText=e.message}}
+function render(){const el=$('rooms');if(!rooms.length){el.innerHTML='<div class="empty">No multiple-chat conversations yet.</div>';return}el.innerHTML=rooms.map(r=>`<div class="room"><div class="room-info"><div class="room-title">${esc(r.title)}</div><div class="room-meta">${r.ais.length} AI${r.ais.length===1?'':'s'} · ${esc(r.conversation_id)}</div></div><div class="room-actions"><button onclick="openRoom('${r.conversation_id}')">Open</button><button class="secondary" onclick="renameRoom('${r.conversation_id}')">Rename</button><button class="danger" onclick="deleteRoom('${r.conversation_id}')">Delete</button></div></div>`).join('')}
+async function newRoom(){try{const j=await api('/api/multi-chats/new',{});location.href='multi_chat_room.html?conversation='+encodeURIComponent(j.room.conversation_id)}catch(e){alert(e.message)}}
+function openRoom(cid){location.href='multi_chat_room.html?conversation='+encodeURIComponent(cid)}
+async function renameRoom(cid){const room=rooms.find(x=>x.conversation_id===cid);const title=prompt('Conversation name:',room?.title||'');if(title===null)return;try{await api('/api/multi-chats/rename',{conversation_id:cid,title});await load()}catch(e){alert(e.message)}}
+async function deleteRoom(cid){if(!confirm('Delete this multiple-chat conversation?'))return;try{await api('/api/multi-chats/delete',{conversation_id:cid});await load()}catch(e){alert(e.message)}}
+load();
 </script>
 </body>
 </html>
