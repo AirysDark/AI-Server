@@ -1,6 +1,8 @@
 """Administrator authentication and account/storage management."""
 from __future__ import annotations
-import hashlib,hmac,os,secrets,shutil,time
+import hashlib,hmac,os,secrets,shutil,time,re
+from email.parser import BytesParser
+from email.policy import default
 from core.config import STORAGE_DIR,USERS_DIR
 from core.auth import hash_password
 from core.storage import load_json,save_json
@@ -89,6 +91,22 @@ def delete_file(uid,relative):
  target=_safe_target(uid,relative)
  if not target or not os.path.isfile(target):return {"ok":False,"error":"File not found"},404
  os.remove(target);return {"ok":True},200
+def upload_file(handler,uid,relative,raw,content_type):
+ if not admin_user(handler):return {"ok":False,"error":"Administrator authentication required"},401
+ target_dir=_safe_target(uid,relative)
+ if not target_dir or not os.path.isdir(target_dir):return {"ok":False,"error":"Directory not found"},404
+ form=BytesParser(policy=default).parsebytes((f"Content-Type: {content_type}\r\n\r\n").encode()+raw)
+ for part in form.iter_parts():
+  disp=part.get("Content-Disposition","")
+  if 'name="file"' not in disp:continue
+  filename=os.path.basename(part.get_filename() or "upload.bin")
+  if not re.fullmatch(r"[A-Za-z0-9._ -]+",filename):filename="upload.bin"
+  data=part.get_payload(decode=True) or b""
+  if not data:return {"ok":False,"error":"Empty upload"},400
+  if len(data)>25*1024*1024:return {"ok":False,"error":"File exceeds 25 MB"},413
+  with open(os.path.join(target_dir,filename),"wb") as f:f.write(data)
+  return {"ok":True,"filename":filename,"size":len(data)},200
+ return {"ok":False,"error":"No file field uploaded"},400
 def delete_account(uid):
  server=_server_module();accounts=server.get_accounts();users=accounts.setdefault("users",{})
  if uid not in users:return {"ok":False,"error":"Account not found"},404
