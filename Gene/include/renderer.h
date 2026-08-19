@@ -22,7 +22,7 @@ private:
     void loadModelTextures(const Model& model);
     void clearBackBuffer(uint32_t color);
     void drawTexturedTriangle(const Vertex& a, const Vertex& b, const Vertex& c,
-                              const TextureInfo* texture, float zBias);
+                              const Material& material, const TextureInfo* texture);
 
     uint32_t _width = 1280;
     uint32_t _height = 720;
@@ -41,6 +41,7 @@ private:
     float _modelCenterX = 0.0f;
     float _modelCenterY = 0.0f;
     float _modelCenterZ = 0.0f;
-    float _modelScale = 1.0f;
+    float _cameraDistance = 5.0f;
+    float _focalLength = 500.0f;
 };
 }
