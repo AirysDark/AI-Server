@@ -12,6 +12,8 @@ def provider_name(settings):
     value = str(settings.get("api_provider") or settings.get("provider") or "huggingface").strip().lower()
     if value in ("openai", "openai-compatible", "openai_compatible"):
         return "openai"
+    if value in ("openrouter", "openrouter.ai"):
+        return "openai"
     if value in ("google", "google-ai-studio", "google_ai_studio", "gemini"):
         return "google"
     return "huggingface"
