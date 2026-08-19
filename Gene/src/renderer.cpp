@@ -339,7 +339,7 @@ void Renderer::present()
     HDC dc=GetDC(hwnd);
     if (dc) {
         const int w=int(_bufferWidth), h=int(_bufferHeight);
-        if (w>0&&h>0) BitBlt(dc,0,0,w,h,static_cast<HDC>(_backBufferDC),0,0,SRCCOPY);
+        if (w>0&&h>0) BitBlt(dc,0,0,w,h,static_cast<HDC>(_backBufferDC),0,0,w,h,SRCCOPY);
         ReleaseDC(hwnd,dc);
     }
 }
