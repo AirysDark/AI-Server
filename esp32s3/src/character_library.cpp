@@ -2,6 +2,7 @@
 #include <string.h>
 
 static const CharacterDefinition characters[] = {
+    {"gene", "Gené", "cartoon", 320, 480},
     {"ai", "AI", "cartoon", 320, 480},
     {"kitty", "Kitty", "cartoon", 320, 480},
     {"3d", "AI 3D", "3d", 320, 480}
