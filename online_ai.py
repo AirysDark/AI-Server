@@ -98,12 +98,14 @@ Maintain continuity with the conversation and use the supplied profile naturally
 
 def _token(settings, provider):
     if provider == "huggingface":
-        # User-scoped credentials live in that AI's settings.json.
-        # The environment fallback is retained for server/admin testing only.
         token = str(settings.get("hf_token", "")).strip()
         return token or os.getenv("HF_TOKEN", "").strip()
-    token = str(settings.get("api_token", "") or settings.get("openai_token", "")).strip()
-    return token or os.getenv("OPENAI_API_KEY", "").strip()
+    token = str(settings.get("api_token", "") or settings.get("openai_token", "") or settings.get("hf_token", "")).strip()
+    if token:
+        return token
+    if provider == "google":
+        return os.getenv("GEMINI_API_KEY", "").strip()
+    return os.getenv("OPENAI_API_KEY", "").strip()
 
 
 def ask_online(prompt, settings=None, knowledge="", image_path=None):
@@ -123,20 +125,30 @@ def ask_online(prompt, settings=None, knowledge="", image_path=None):
         if match:
             image_path = match.group(1).strip()
 
-    if provider == "openai":
-        model = str(settings.get("api_model") or os.getenv("AI_OPENAI_MODEL") or "gpt-4o-mini").strip()
-        health_key = f"openai:{settings.get('api_endpoint') or 'default'}:{model}"
+    if provider in ("openai", "google"):
+        if provider == "google":
+            provider_settings = dict(settings)
+            provider_settings["api_endpoint"] = provider_settings.get("api_endpoint") or "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+            provider_settings["api_model"] = provider_settings.get("api_model") or "gemini-2.5-flash"
+            model = str(provider_settings["api_model"]).strip()
+            health_key = f"google:{provider_settings.get('api_endpoint')}:{model}"
+            label = "Google AI Studio"
+        else:
+            provider_settings = settings
+            model = str(settings.get("api_model") or os.getenv("AI_OPENAI_MODEL") or "gpt-4o-mini").strip()
+            health_key = f"openai:{settings.get('api_endpoint') or 'default'}:{model}"
+            label = "OpenAI-compatible"
         if not _available(health_key):
             return None
         try:
-            reply = provider_chat(token, settings, system_prompt, prompt, image_path=image_path, model=model)
+            reply = provider_chat(token, provider_settings, system_prompt, prompt, image_path=image_path, model=model)
             _mark_success(health_key)
             learn_online_response(prompt, reply, settings)
-            print("ONLINE AI USING PROVIDER: OpenAI-compatible")
+            print("ONLINE AI USING PROVIDER:", label)
             return reply
         except Exception as e:
             _mark_failure(health_key, e)
-            print("ONLINE AI OPENAI ERROR:", e)
+            print(f"ONLINE AI {label.upper()} ERROR:", e)
             return None
 
     models = huggingface.VISION_MODELS if image_path else huggingface.TEXT_MODELS
