@@ -11,11 +11,13 @@ async function boot(){
   fillSettings(s);
   const params=new URLSearchParams(location.search);
   const chatId=params.get('chat');
-  if(chatId){try{localStorage.setItem('lastConversationId',String(chatId))}catch(e){};await loadSelectedChat(chatId)}
+  if(chatId){try{localStorage.setItem('lastConversation',JSON.stringify({conversation_id:String(chatId),ai_id:s.ai_id||''}))}catch(e){};await loadSelectedChat(chatId)}
   else{
    let lastChat=null;
-   try{lastChat=localStorage.getItem('lastConversationId')}catch(e){}
-   if(lastChat)await loadSelectedChat(lastChat);else await loadMemory();
+   try{const saved=JSON.parse(localStorage.getItem('lastConversation')||'null');if(saved&&saved.conversation_id&&(!saved.ai_id||saved.ai_id===s.ai_id))lastChat=saved.conversation_id}catch(e){}
+   if(lastChat){
+    try{await loadSelectedChat(lastChat)}catch(e){try{localStorage.removeItem('lastConversation')}catch(x){};await loadMemory()}
+   }else await loadMemory();
   }
   startProactive();
  }catch(e){
@@ -35,11 +37,11 @@ async function loadSelectedChat(chatId){
  if(!conversation&&result.archive&&typeof result.archive==='object')conversation=Array.isArray(result.archive.conversation)?result.archive.conversation:null;
  if(!conversation){const fallback=await apiGet('/api/user');if(fallback&&Array.isArray(fallback.conversation))conversation=fallback.conversation}
  if(!Array.isArray(conversation))throw Error('Conversation archive has invalid format');
- try{localStorage.setItem('lastConversationId',id)}catch(e){}
  const chat=document.getElementById('chat');
  if(!chat)throw Error('Chat element not found');
  chat.innerHTML='';
  conversation.forEach(loadConversationEntry);
+ try{localStorage.setItem('lastConversation',JSON.stringify({conversation_id:id,ai_id:account?.ai_id||''}))}catch(e){}
  sessionStorage.setItem('selectedConversation',JSON.stringify({conversation_id:id,data:{conversation:conversation}}));
 }
 
