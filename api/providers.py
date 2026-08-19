@@ -5,6 +5,7 @@ provider-specific HTTP details.
 """
 from api.huggingface import chat as huggingface_chat
 from api.openai import chat as openai_chat
+from api.google import chat as google_chat
 
 
 def provider_name(settings):
@@ -19,10 +20,7 @@ def provider_name(settings):
 def chat(token, settings, system_prompt, prompt, image_path=None, timeout=45, model=None):
     provider = provider_name(settings)
     if provider == "google":
-        google_settings = dict(settings)
-        google_settings["api_endpoint"] = google_settings.get("api_endpoint") or "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
-        google_settings["api_model"] = google_settings.get("api_model") or "gemini-2.5-flash"
-        return openai_chat(token, google_settings, system_prompt, prompt, image_path=image_path, timeout=timeout)
+        return google_chat(token, settings, system_prompt, prompt, image_path=image_path, timeout=timeout, model=model)
     if provider == "openai":
         return openai_chat(token, settings, system_prompt, prompt, image_path=image_path, timeout=timeout)
     selected_model = str(model or settings.get("api_model") or "Qwen/Qwen2.5-7B-Instruct")
