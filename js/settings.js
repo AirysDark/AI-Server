@@ -5,10 +5,10 @@ function updateTokenProviderUI(){
  const other=$('otherApiSettings');if(other)other.style.display=(openai||google)?'block':'none';
  const link=$('tokenLink');if(link){link.href=google?'https://aistudio.google.com/app/apikey':openai?'https://platform.openai.com/api-keys':'https://huggingface.co/settings/tokens';link.innerText=google?'Create a Google AI Studio API key':openai?'Create an OpenAI API key':'Create a Hugging Face token'}
  const endpoint=$('apiEndpointInput');const model=$('apiModelInput');
- if(google){if(endpoint&&(!endpoint.value||endpoint.value.includes('/openai/chat/completions')))endpoint.value='https://generativelanguage.googleapis.com/v1beta';if(model&&(!model.value||model.value==='gemini-2.5-flash'))model.value='gemini-3.6-flash'}
+ if(google&&endpoint&&(!endpoint.value||endpoint.value.includes('/openai/chat/completions')))endpoint.value='https://generativelanguage.googleapis.com/v1beta';
  if(endpoint)endpoint.placeholder=google?'https://generativelanguage.googleapis.com/v1beta':openai?'https://api.openai.com/v1/chat/completions':'API endpoint';
- if(model)model.placeholder=google?'gemini-3.6-flash':openai?'gpt-4o-mini':'Model name';
- const compatibility=$('apiCompatibilityText');if(compatibility)compatibility.innerText=google?'Google AI Studio Gemini API with automatic Gemini model discovery and fallback.':openai?'OpenAI API is supported through the server API adapter.':'Compatible with other AI APIs.';
+ if(model)model.placeholder=google?'Leave blank to auto-select the best available Gemini model':openai?'gpt-4o-mini':'Model name';
+ const compatibility=$('apiCompatibilityText');if(compatibility)compatibility.innerText=google?'Leave API Model blank to automatically select an available Gemini model. Enter a model name only to force a specific model.':openai?'OpenAI API is supported through the server API adapter.':'Compatible with other AI APIs.';
 }
 function setValue(id,value){const el=$(id);if(el)el.value=value??'';return el}
 function setChecked(id,value){const el=$(id);if(el)el.checked=!!value;return el}
