@@ -6,32 +6,23 @@ made here without changing the main provider router.
 """
 import base64
 import os
-import re
 import requests
 
 BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 MODELS_URL = f"{BASE_URL}/models"
 
-TEXT_MODELS = [
-    os.getenv("AI_GOOGLE_MODEL", "gemini-3.6-flash"),
+PREFERRED_MODELS = [
     "gemini-3.6-flash",
     "gemini-3.5-flash",
     "gemini-3.5-flash-lite",
     "gemini-3.1-flash-lite",
 ]
-
-VISION_MODELS = [
-    "gemini-3.6-flash",
-    "gemini-3.5-flash",
-    "gemini-3.5-flash-lite",
-    "gemini-3.1-flash-lite",
-]
+TEXT_MODELS = [os.getenv("AI_GOOGLE_MODEL", "gemini-3.6-flash")] + PREFERRED_MODELS
+VISION_MODELS = list(PREFERRED_MODELS)
 
 
 def _base_url(settings=None):
     configured = str((settings or {}).get("api_endpoint") or "").strip().rstrip("/")
-    # Older Google settings used the OpenAI-compatible chat endpoint. Keep
-    # those settings working while using the native Gemini API module.
     if not configured or "/openai/" in configured:
         return BASE_URL
     if configured.endswith("/generateContent"):
@@ -45,7 +36,7 @@ def _model_name(model):
 
 
 def discover_models(token):
-    """Return Gemini models available to this API key that support generateContent."""
+    """Return available Gemini models supporting generateContent, best-first."""
     if not token:
         return []
     result = []
@@ -75,11 +66,16 @@ def discover_models(token):
     except Exception:
         return []
     seen = set()
-    return [m for m in result if not (m in seen or seen.add(m))]
+    result = [m for m in result if not (m in seen or seen.add(m))]
+    preferred = []
+    for model in PREFERRED_MODELS:
+        if model in result:
+            preferred.append(model)
+    remaining = [m for m in result if m not in preferred]
+    return preferred + remaining
 
 
 def is_vision_model(model):
-    # Gemini Flash 3.x models used by this app support image input.
     text = _model_name(model).lower()
     return text.startswith("gemini-") and "flash" in text
 
