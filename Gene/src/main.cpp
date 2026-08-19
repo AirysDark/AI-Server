@@ -1,6 +1,8 @@
 #include <chrono>
+#include <exception>
 #include <filesystem>
 #include <iostream>
+#include <string>
 #include <thread>
 #include "gene_model.h"
 #include "animation.h"
