@@ -21,17 +21,12 @@ input[type=text]{width:100%;box-sizing:border-box;padding:8px;background:#18181c
 <div><button id="loadUrl">Load PMX URL</button><button id="pickFolder">Load PMX folder</button></div>
 <input id="folder" type="file" webkitdirectory directory multiple hidden>
 <div id="status">Initialising Babylon-MMD…</div>
-<div class="small">For local models with textures, use “Load PMX folder”. It registers the PMX and all referenced texture files with Babylon's file loader.</div>
+<div class="small">Use “Load PMX folder” for a local model with textures. Babylon's file store resolves the PMX texture paths instead of converting the model to a broken simplified mesh.</div>
 </div>
 <canvas id="renderCanvas"></canvas>
 <script type="module">
-import {
-  Engine, Scene, Vector3, Color3, HemisphericLight, DirectionalLight,
-  ArcRotateCamera, LoadAssetContainerAsync, FilesInputStore
-} from "https://esm.sh/@babylonjs/core@9.15.0";
-import {
-  MmdRuntime, MmdStandardMaterialProxy, SdefInjector
-} from "https://esm.sh/babylon-mmd@1.3.0?deps=@babylonjs/core@9.15.0";
+import {Engine,Scene,Vector3,Color3,HemisphericLight,DirectionalLight,ArcRotateCamera,LoadAssetContainerAsync,FilesInputStore} from "https://esm.sh/@babylonjs/core@9.15.0";
+import {MmdRuntime,MmdStandardMaterialProxy,SdefInjector} from "https://esm.sh/babylon-mmd@1.3.0?deps=@babylonjs/core@9.15.0";
 import "https://esm.sh/babylon-mmd@1.3.0/esm/Loader/pmxLoader?deps=@babylonjs/core@9.15.0";
 import "https://esm.sh/babylon-mmd@1.3.0/esm/Loader/mmdModelLoader.default?deps=@babylonjs/core@9.15.0";
 
@@ -40,65 +35,23 @@ const status=document.getElementById('status');
 const engine=new Engine(canvas,true,{preserveDrawingBuffer:true,stencil:true});
 SdefInjector.OverrideEngineCreateEffect(engine);
 const scene=new Scene(engine);
-scene.clearColor=new Color3(0.055,0.055,0.07).toColor4(1);
+scene.clearColor=new Color3(.055,.055,.07).toColor4(1);
 scene.ambientColor=new Color3(.5,.5,.5);
-
 const camera=new ArcRotateCamera('GeneCamera',-Math.PI/2,Math.PI/2.15,28,new Vector3(0,10,0),scene);
-camera.lowerRadiusLimit=1; camera.upperRadiusLimit=200; camera.wheelPrecision=35; camera.panningSensibility=80;
-camera.attachControl(canvas,true);
+camera.lowerRadiusLimit=1;camera.upperRadiusLimit=200;camera.wheelPrecision=35;camera.panningSensibility=80;camera.attachControl(canvas,true);
 new HemisphericLight('Hemi',new Vector3(0,1,0),scene).intensity=.65;
-const sun=new DirectionalLight('Sun',new Vector3(.3,-1,.5),scene); sun.intensity=1.0;
-const runtime=new MmdRuntime(scene); runtime.register(scene);
+const sun=new DirectionalLight('Sun',new Vector3(.3,-1,.5),scene);sun.intensity=1;
+const runtime=new MmdRuntime(scene);runtime.register(scene);
 let container=null;
-
 function setStatus(text,kind=''){status.textContent=text;status.className=kind;}
-function fitCamera(){
-  const ext=scene.getWorldExtends();
-  const min=ext.min,max=ext.max;
-  const center=min.add(max).scale(.5);
-  const size=max.subtract(min);
-  const radius=Math.max(size.x,size.y,size.z)*1.25;
-  camera.target=center; camera.radius=Math.max(radius*1.8,2);
-}
-
-async function loadModel(source,displayName){
-  try{
-    if(container){container.removeAllFromScene();container.dispose();container=null;}
-    setStatus('Loading '+displayName+' with Babylon-MMD…');
-    container=await LoadAssetContainerAsync(source,scene);
-    container.addAllToScene();
-    const mmdMesh=container.meshes.find(m=>m.metadata?.mmdMesh || m.name.toLowerCase().includes('mmd')) || container.meshes[0];
-    if(mmdMesh){
-      try{runtime.createMmdModel(mmdMesh,{materialProxyConstructor:MmdStandardMaterialProxy});}catch(e){console.warn('MMD runtime model setup:',e);}
-    }
-    fitCamera();
-    const meshes=container.meshes.length;
-    const materials=container.materials.length;
-    setStatus('Loaded successfully\nModel: '+displayName+'\nMeshes: '+meshes+'\nMaterials: '+materials,'ok');
-  }catch(e){
-    console.error(e);
-    setStatus('LOAD FAILED\n'+(e?.message||String(e)),'err');
-  }
-}
-
-document.getElementById('loadUrl').onclick=()=>loadModel(document.getElementById('url').value.trim(),document.getElementById('url').value.trim());
+function fitCamera(){const ext=scene.getWorldExtends();const min=ext.min,max=ext.max,center=min.add(max).scale(.5),size=max.subtract(min);const radius=Math.max(size.x,size.y,size.z)*1.25;camera.target=center;camera.radius=Math.max(radius*1.8,2);}
+async function attachRuntime(){const mmdMesh=container.meshes.find(m=>m.metadata?.mmdMesh)||container.meshes[0];if(mmdMesh){try{runtime.createMmdModel(mmdMesh,{materialProxyConstructor:MmdStandardMaterialProxy});}catch(e){console.warn('MMD runtime setup:',e);}}fitCamera();setStatus('Loaded successfully\nMeshes: '+container.meshes.length+'\nMaterials: '+container.materials.length,'ok');}
+async function loadUrl(url){try{if(container){container.removeAllFromScene();container.dispose();container=null;}setStatus('Loading '+url+' with Babylon-MMD…');container=await LoadAssetContainerAsync(url,scene);container.addAllToScene();await attachRuntime();}catch(e){console.error(e);setStatus('LOAD FAILED\n'+(e?.message||String(e)),'err');}}
+async function loadLocal(file){try{if(container){container.removeAllFromScene();container.dispose();container=null;}setStatus('Loading '+file.name+' and resolving local textures…');container=await LoadAssetContainerAsync('file:',file,scene);container.addAllToScene();await attachRuntime();}catch(e){console.error(e);setStatus('LOCAL LOAD FAILED\n'+(e?.message||String(e)),'err');}}
+document.getElementById('loadUrl').onclick=()=>loadUrl(document.getElementById('url').value.trim());
 document.getElementById('pickFolder').onclick=()=>document.getElementById('folder').click();
-document.getElementById('folder').onchange=async ev=>{
-  const files=[...ev.target.files];
-  if(!files.length)return;
-  for(const file of files){
-    const path=(file.webkitRelativePath||file.name).replace(/\\/g,'/').toLowerCase();
-    FilesInputStore.FilesToLoad[path]=file;
-    FilesInputStore.FilesToLoad[file.name.toLowerCase()]=file;
-  }
-  const pmx=files.find(f=>/\.pmx$/i.test(f.name)) || files.find(f=>/\.pmd$/i.test(f.name));
-  if(!pmx){setStatus('No PMX/PMD file found in selected folder.','err');return;}
-  await loadModel('file:',pmx.name);
-};
-
-engine.runRenderLoop(()=>scene.render());
-window.addEventListener('resize',()=>engine.resize());
-loadModel(document.getElementById('url').value,'jene_PSO2.pmx');
+document.getElementById('folder').onchange=async ev=>{const files=[...ev.target.files];if(!files.length)return;for(const file of files){const path=(file.webkitRelativePath||file.name).replace(/\\/g,'/').toLowerCase();FilesInputStore.FilesToLoad[path]=file;FilesInputStore.FilesToLoad[file.name.toLowerCase()]=file;}const pmx=files.find(f=>/\.pmx$/i.test(f.name))||files.find(f=>/\.pmd$/i.test(f.name));if(!pmx){setStatus('No PMX/PMD file found in selected folder.','err');return;}await loadLocal(pmx);};
+engine.runRenderLoop(()=>scene.render());window.addEventListener('resize',()=>engine.resize());loadUrl(document.getElementById('url').value.trim());
 </script>
 </body>
 </html>
