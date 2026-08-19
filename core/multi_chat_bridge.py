@@ -105,6 +105,7 @@ def save_talk_settings(uid,cid,data):
         r["talk_settings"]=s;r["updated"]=time.time();save_json(_path(uid,cid),r);return copy.deepcopy(s)
 def _participant_name(r,aid,ai):return r.get("talk_settings",{}).get("names",{}).get(aid,"").strip() or ai.get("ai_name","AI")
 def _transcript(r):return "\n".join(("User: "+str(x.get("text",""))) if x.get("type")=="user" else str(x.get("ai_name","AI"))+": "+str(x.get("text","")) for x in r.get("conversation",[])[-50:])
+
 def _reply(uid,aid,r,prompt):
     settings=load_settings(uid,aid);enabled=features(settings);memory=load_json(os.path.join(ai_root(uid,aid),"brain_memory.json"),{});context=ai_profile({"memory":memory if isinstance(memory,dict) else {},"conversation":r.get("conversation",[])},prompt,settings);participants=[]
     all_ais=list_ais(uid)
@@ -128,8 +129,17 @@ Conversation so far:
 
 Respond naturally as yourself. Recognize the other AIs by their names. Address them directly when appropriate. Do not pretend to be another participant."""
     if prompt:full+="\n\nLatest event:\n"+prompt
-    reply=clean_reply(ask_online(full,settings,context)) if enabled["online_ai"] else None
-    if not reply:reply=clean_reply(think(full,settings,os.path.join(ai_root(uid,aid),"brain_memory.json"),os.path.join(ai_root(uid,aid),"learning_replies.json")))
+
+    # Use the configured provider/API exactly like single-AI chat. If this AI
+    # has no usable API configured (or the online request fails), fall back to
+    # the local brain instead of emitting an online-error response.
+    reply=None
+    if enabled["online_ai"]:
+        reply=clean_reply(ask_online(full,settings,context))
+        if reply and reply.startswith("[ONLINE AI ERROR:"):
+            reply=None
+    if not reply:
+        reply=clean_reply(think(full,settings,os.path.join(ai_root(uid,aid),"brain_memory.json"),os.path.join(ai_root(uid,aid),"learning_replies.json")))
     return reply or "I couldn't get an AI response right now."
 def _finish_ai(uid,cid,aid,prompt,snapshot,mode=None):
     try:
