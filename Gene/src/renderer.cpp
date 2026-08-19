@@ -174,10 +174,8 @@ void Renderer::drawTexturedTriangle(const Vertex& a, const Vertex& b, const Vert
     auto* dst = static_cast<uint32_t*>(_backBufferPixels);
     const bool textured = texture && texture->loaded() && texture->width > 0 && texture->height > 0;
 
-    // MMD Tools computes final alpha as the minimum of material alpha and the
-    // alpha supplied by the base/toon/sphere textures. Its image loader also
-    // disables alpha for BMP files. TextureInfo::useAlpha reproduces that
-    // distinction so WIC's synthesized BMP alpha cannot punch holes in meshes.
+    // Match MMD Tools: final alpha is the product of material alpha and the
+    // applicable image alpha. BMP/JPEG image alpha is disabled by TextureLoader.
     const uint8_t materialAlpha = uint8_t(std::clamp(material.diffuse[3] * 255.0f, 0.0f, 255.0f));
 
     for (int y=minY; y<=maxY; ++y) for (int x=minX; x<=maxX; ++x) {
@@ -299,8 +297,6 @@ void Renderer::draw(const Model& model)
         const TextureInfo* tex=nullptr;
         if (mat.textureIndex>=0&&size_t(mat.textureIndex)<_textures.size()&&_textures[mat.textureIndex].loaded()) tex=&_textures[mat.textureIndex];
         for (size_t j=0;j+2<count;j+=3) {
-            // PMX Tools reverses the triangle winding while converting into
-            // Blender's coordinate system. We do the same here for consistency.
             const uint32_t ia=idx[offset+j+2], ib=idx[offset+j+1], ic=idx[offset+j];
             if (ia<skinned.size()&&ib<skinned.size()&&ic<skinned.size()) drawTexturedTriangle(skinned[ia],skinned[ib],skinned[ic],mat,tex);
         }
@@ -325,9 +321,8 @@ void Renderer::paint()
     HDC dc=BeginPaint(hwnd,&ps);
     RECT r{}; GetClientRect(hwnd,&r);
     const int w=r.right-r.left, h=r.bottom-r.top;
-    if (dc&&w>0&&h>0&&ensureBackBuffer(w,h)) {
-        BitBlt(dc,0,0,w,h,static_cast<HDC>(_backBufferDC),0,0,w,h,SRCCOPY);
-    }
+    if (dc&&w>0&&h>0&&ensureBackBuffer(w,h))
+        BitBlt(dc,0,0,w,h,static_cast<HDC>(_backBufferDC),0,0,SRCCOPY);
     EndPaint(hwnd,&ps);
 }
 
@@ -338,7 +333,7 @@ void Renderer::present()
     HDC dc=GetDC(hwnd);
     if (dc) {
         const int w=int(_bufferWidth), h=int(_bufferHeight);
-        if (w>0&&h>0) BitBlt(dc,0,0,w,h,static_cast<HDC>(_backBufferDC),0,0,w,h,SRCCOPY);
+        if (w>0&&h>0) BitBlt(dc,0,0,w,h,static_cast<HDC>(_backBufferDC),0,0,SRCCOPY);
         ReleaseDC(hwnd,dc);
     }
 }
