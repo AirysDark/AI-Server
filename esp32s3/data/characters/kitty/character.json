@@ -1,0 +1,17 @@
+{
+  "id": "kitty",
+  "name": "Kitty",
+  "renderer": "cartoon",
+  "resolution": [320, 480],
+  "animations": {
+    "idle": "idle",
+    "thinking": "thinking",
+    "talking": "talking",
+    "happy": "happy",
+    "sad": "sad",
+    "angry": "angry",
+    "surprised": "surprised",
+    "sleepy": "sleepy",
+    "offline": "offline"
+  }
+}
