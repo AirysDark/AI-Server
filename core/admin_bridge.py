@@ -1,7 +1,7 @@
 """Install admin routes on the existing AIHandler without altering normal APIs."""
 import json
 from urllib.parse import urlparse,parse_qs
-from core.admin_api import ADMIN_COOKIE,handle_get,handle_post
+from core.admin_api import ADMIN_COOKIE,admin_user,handle_get,handle_post,upload_file
 
 def install_handler_routes(handler_cls):
     if getattr(handler_cls,"_admin_routes_installed",False):return
@@ -15,6 +15,11 @@ def install_handler_routes(handler_cls):
         return original_get(self)
     def do_post(self):
         parsed=urlparse(self.path)
+        if parsed.path=="/api/admin/file/upload":
+            if not admin_user(self):return self.send_json({"ok":False,"error":"Administrator authentication required"},status=401)
+            query=parse_qs(parsed.query);uid=(query.get("uid") or [""])[0];path=(query.get("path") or [""])[0]
+            length=int(self.headers.get("Content-Length",0) or 0);raw=self.rfile.read(length)
+            result,status=upload_file(self,uid,path,raw,self.headers.get("Content-Type",""));return self.send_json(result,status=status)
         if parsed.path.startswith("/api/admin/"):
             length=int(self.headers.get("Content-Length",0) or 0)
             try:data=json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
