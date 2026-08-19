@@ -30,17 +30,31 @@ def field(o,*names,default=None):
         if hasattr(o,n):return getattr(o,n)
     return default
 
+def vec3(v,default=(0,0,0)):
+    """Convert pymeshio Vector3/sequence/scalar to a numeric XYZ tuple."""
+    if v is None:return default
+    try:
+        if hasattr(v,"x") and hasattr(v,"y") and hasattr(v,"z"):return (float(v.x),float(v.y),float(v.z))
+        a=list(v);return (float(a[0]),float(a[1]),float(a[2]))
+    except Exception:return default
+
+def vec2(v,default=(0,0)):
+    if v is None:return default
+    try:
+        if hasattr(v,"x") and hasattr(v,"y"):return (float(v.x),float(v.y))
+        a=list(v);return (float(a[0]),float(a[1]))
+    except Exception:return default
+
 def rgba(v):
-    try:a=list(v);a += [1]*(4-len(a));return np.asarray(a[:4],np.float32)
+    try:a=[float(x) for x in v];a += [1]*(4-len(a));return np.asarray(a[:4],np.float32)
     except:return np.ones(4,np.float32)
 
 class MaterialBatch:
     def __init__(self,program,vertices,indices,material,texture_path):
         self.program=program;self.material=rgba(field(material,"diffuse_color","diffuse",default=(1,1,1,1)));self.material[3]=float(field(material,"alpha",default=self.material[3]));p=[];n=[];u=[]
         for i in indices:
-            v=vertices[i];p.extend(field(v,"position",default=(0,0,0)));n.extend(field(v,"normal",default=(0,1,0)));u.extend(field(v,"uv",default=(0,0)))
-        # pyglet ShaderProgram.vertex_list requires an explicit primitive mode.
-        self.vlist=program.vertex_list(len(indices),gl.GL_TRIANGLES,position=("f",p),normal=("f",n),uv=("f",u),diffuse=("f",[1]*len(indices)*4));self.texture=None
+            v=vertices[i];p.extend(vec3(field(v,"position")));n.extend(vec3(field(v,"normal"), (0,1,0)));u.extend(vec2(field(v,"uv")))
+        self.vlist=program.vertex_list(len(indices),gl.GL_TRIANGLES,position=("f",p),normal=("f",n),uv=("f",u),diffuse=("f",[1.0]*len(indices)*4));self.texture=None
         if texture_path and texture_path.exists():
             try:
                 im=Image.open(texture_path).convert("RGBA").transpose(Image.Transpose.FLIP_TOP_BOTTOM);d=pyglet.image.ImageData(im.width,im.height,"RGBA",im.tobytes(),pitch=im.width*4);self.texture=d.get_texture()
@@ -64,7 +78,7 @@ class GeneWindow(pyglet.window.Window):
             print(f"Material {mi}: indices={len(part)} texture={tp or 'none'}")
             if len(part)>=3:self.batches.append(MaterialBatch(self.program,v,part,mat,tp))
         if cursor<len(idx):self.batches.append(MaterialBatch(self.program,v,idx[cursor:],mats[-1] if mats else None,None))
-        p=np.asarray([field(x,"position",default=(0,0,0)) for x in v],np.float32);lo,hi=p.min(0),p.max(0);self.target=(lo+hi)/2;self.distance=max(float(np.max(hi-lo))*1.5,5);print("Bounds:",lo.tolist(),hi.tolist());print("Render batches:",len(self.batches))
+        p=np.asarray([vec3(field(x,"position")) for x in v],dtype=np.float32);lo,hi=p.min(0),p.max(0);self.target=(lo+hi)/2;self.distance=max(float(np.max(hi-lo))*1.5,5);print("Bounds:",lo.tolist(),hi.tolist());print("Render batches:",len(self.batches))
     def on_draw(self):
         self.clear();gl.glEnable(gl.GL_DEPTH_TEST);gl.glDisable(gl.GL_CULL_FACE);gl.glEnable(gl.GL_BLEND);gl.glBlendFunc(gl.GL_SRC_ALPHA,gl.GL_ONE_MINUS_SRC_ALPHA);a=max(self.width/max(self.height,1),.1);cp=math.cos(self.pitch);eye=self.target+np.array([math.sin(self.yaw)*cp*self.distance,math.sin(self.pitch)*self.distance,math.cos(self.yaw)*cp*self.distance],np.float32);self.program["u_model"]=self.model;self.program["u_view"]=look_at(eye,self.target);self.program["u_proj"]=perspective(45,a,.05,10000);self.program["u_light"]=(-.4,.8,.6)
         for b in self.batches:self.program["u_material"]=b.material;b.draw()
