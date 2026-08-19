@@ -49,7 +49,36 @@ function renderParticipants(){const selected=new Set(state.room.ais);$('particip
 function renderConversation(){const el=$('chat');const atBottom=el.scrollHeight-el.scrollTop-el.clientHeight<80;el.innerHTML=state.room.conversation.map(x=>x.type==='user'?`<div class="msg user"><div class="who">You</div>${esc(x.text)}</div>`:`<div class="msg ai"><div class="who">${esc(x.ai_name)}${x.mode==='ai_to_ai'?' · AI to AI':''}</div>${esc(x.text)}</div>`).join('');if(atBottom)el.scrollTop=el.scrollHeight}
 function setLive(ok){$('liveStatus').className=ok?'live':'live offline';$('liveStatus').innerText=ok?'● Live updates enabled':'● Reconnecting...'}
 async function saveParticipants(){const ids=[...document.querySelectorAll('#participants input:checked')].map(x=>x.value);if(!ids.length){alert('At least one AI must remain.');return}try{const j=await api('/api/multi-chats/participants',{conversation_id:state.room.conversation_id,ais:ids});state.room=j.room;lastSignature=signature(state.room);render()}catch(e){$('error').innerText=e.message}}
-async function sendMessage(){if(loading)return;const input=$('message'),text=input.value.trim();if(!text)return;input.value='';loading=true;setTyping(true,selectedAiNames());try{const j=await api('/api/multi-chats/message',{conversation_id:state.room.conversation_id,message:text});state.room=j.room;lastSignature=signature(state.room);render()}catch(e){$('error').innerText=e.message}finally{loading=false;setTyping(false)}}
+async function sendMessage(){
+ if(loading)return;
+ const input=$('message'),text=input.value.trim();
+ if(!text)return;
+ if(!state.room||!state.room.conversation_id)return;
+ input.value='';
+ $('error').innerText='';
+ loading=true;
+ const sentAt=Date.now()/1000;
+ // Show the user's message immediately. Do not wait for the AI/server response.
+ state.room.conversation=Array.isArray(state.room.conversation)?state.room.conversation:[];
+ state.room.conversation.push({type:'user',text,time:sentAt,pending:true});
+ renderConversation();
+ setTyping(true,selectedAiNames());
+ try{
+  const j=await api('/api/multi-chats/message',{conversation_id:state.room.conversation_id,message:text});
+  // Replace the optimistic display with the authoritative server conversation.
+  state.room=j.room;
+  lastSignature=signature(state.room);
+  render();
+ }catch(e){
+  // Remove only the optimistic copy if the send failed.
+  state.room.conversation=state.room.conversation.filter(x=>!(x.pending&&x.text===text&&x.time===sentAt));
+  renderConversation();
+  $('error').innerText=e.message;
+ }finally{
+  loading=false;
+  setTyping(false);
+ }
+}
 async function aiTalk(){if(loading)return;loading=true;setTyping(true,selectedAiNames());try{const j=await api('/api/multi-chats/talk',{conversation_id:state.room.conversation_id});state.room=j.room;lastSignature=signature(state.room);render()}catch(e){$('error').innerText=e.message}finally{loading=false;setTyping(false)}}
 async function renameCurrent(){const title=prompt('Conversation name:',state.room?.title||'');if(title===null)return;try{await api('/api/multi-chats/rename',{conversation_id:state.room.conversation_id,title});await load(true)}catch(e){alert(e.message)}}
 async function deleteCurrent(){if(!confirm('Delete this multiple-chat conversation?'))return;try{await api('/api/multi-chats/delete',{conversation_id:state.room.conversation_id});stopPolling();location.href='multi_chat.html'}catch(e){alert(e.message)}}
