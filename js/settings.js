@@ -1,14 +1,14 @@
 function updateTokenProviderUI(){
  const provider=$('aiTokenProviderInput')?.value||'huggingface';const openai=provider==='openai';const google=provider==='google';
  const label=$('apiTokenLabel');if(label)label.innerText=google?'Google AI Studio API Key':openai?'OpenAI API Token':'Hugging Face API Token';
- const token=$('hfTokenInput');if(token)token.placeholder=google?'Enter your Google AI Studio Gemini API key':openai?'Enter the OpenAI API token':'Leave blank to use the server default token';
+ const token=$('hfTokenInput');if(token)token.placeholder=google?'Enter this AI\'s Google AI Studio Gemini API key':openai?'Enter this AI\'s OpenAI API token':'Enter this AI\'s Hugging Face API token';
  const other=$('otherApiSettings');if(other)other.style.display=(openai||google)?'block':'none';
  const link=$('tokenLink');if(link){link.href=google?'https://aistudio.google.com/app/apikey':openai?'https://platform.openai.com/api-keys':'https://huggingface.co/settings/tokens';link.innerText=google?'Create a Google AI Studio API key':openai?'Create an OpenAI API key':'Create a Hugging Face token'}
  const endpoint=$('apiEndpointInput');const model=$('apiModelInput');
  if(google&&endpoint&&(!endpoint.value||endpoint.value.includes('/openai/chat/completions')))endpoint.value='https://generativelanguage.googleapis.com/v1beta';
  if(google&&model&&['gemini-2.5-flash','gemini-3.6-flash','gemini-3.5-flash','gemini-3.5-flash-lite','gemini-3.1-flash-lite'].includes(model.value.trim()))model.value='';
  if(endpoint)endpoint.placeholder=google?'https://generativelanguage.googleapis.com/v1beta':openai?'https://api.openai.com/v1/chat/completions':'API endpoint';
- if(model)model.placeholder=google?'Leave blank to auto-select the best available Gemini model':openai?'gpt-4o-mini':'Model name';
+ if(model)model.placeholder=google?'Leave blank to auto-select an available Gemini model':openai?'gpt-4o-mini':'Model name';
  const compatibility=$('apiCompatibilityText');if(compatibility)compatibility.innerText=google?'Leave API Model blank to automatically select an available Gemini model. Enter a model name only to force a specific model.':openai?'OpenAI API is supported through the server API adapter.':'Compatible with other AI APIs.';
 }
 function setValue(id,value){const el=$(id);if(el)el.value=value??'';return el}
@@ -17,7 +17,7 @@ function fillSettings(s){
  s=s||{};const aiName=$('aiName');if(aiName)aiName.innerText=s.ai_name||'AI';document.title=s.ai_name||'AI';
  setValue('aiNameInput',s.ai_name||'AI');setValue('aiGenderInput',s.ai_gender||'');setValue('userNameInput',s.user_name||'');setValue('userGenderInput',s.user_gender||'');
  let provider=s.api_provider||'huggingface';if(provider==='openai_compatible')provider='openai';setValue('aiTokenProviderInput',provider);setValue('hfTokenInput',s.hf_token||'');setValue('apiEndpointInput',s.api_endpoint||'');setValue('apiModelInput',s.api_model||'');updateTokenProviderUI();
- const tokenStatus=$('tokenStatus');if(tokenStatus)tokenStatus.innerText=s.hf_token?'This AI is using its own API token.':'This AI is using the server default API token.';
+ const tokenStatus=$('tokenStatus');if(tokenStatus)tokenStatus.innerText=s.hf_token?'This AI has its own API token configured.':'No API token is configured for this AI.';
  setValue('description',s.description||'');setValue('background',s.background||'');setValue('userInfo',s.user_information||'');setValue('personality',s.personality||'');setValue('instructions',s.instructions||'');setValue('traits',(s.config?.traits||[]).join('\n'));setValue('rules',(s.config?.rules||[]).join('\n'));
  setChecked('onlineEnabled',s.features?.online_ai!==false);setChecked('learningEnabled',s.features?.learning!==false);setChecked('memoryEnabled',s.features?.long_term_memory!==false);setChecked('relevantEnabled',s.features?.relevant_memory!==false);setChecked('proactiveEnabled',s.proactive?.enabled===true);setChecked('imagesEnabled',s.features?.automatic_images===true);setChecked('proactiveImagesEnabled',s.features?.proactive_images===true);
  const accountInfo=$('accountInfo');if(accountInfo&&typeof account!=='undefined'&&account)accountInfo.innerText=(account.username||'')+' • '+(account.email||'')+' • '+(account.user_id||'');
