@@ -166,7 +166,6 @@ void Renderer::drawTexturedTriangle(const Vertex& a, const Vertex& b, const Vert
     p[0] = project(a); p[1] = project(b); p[2] = project(c);
     const float area = edge(p[0].x,p[0].y,p[1].x,p[1].y,p[2].x,p[2].y);
     if (std::fabs(area) < 0.00001f) return;
-
     const bool doubleSided = (material.flags & 0x01u) != 0;
     if (!doubleSided && area >= 0.0f) return;
 
@@ -184,15 +183,13 @@ void Renderer::drawTexturedTriangle(const Vertex& a, const Vertex& b, const Vert
         float w0=edge(p[1].x,p[1].y,p[2].x,p[2].y,px,py);
         float w1=edge(p[2].x,p[2].y,p[0].x,p[0].y,px,py);
         float w2=edge(p[0].x,p[0].y,p[1].x,p[1].y,px,py);
-        if (!((w0 >= 0.0f && w1 >= 0.0f && w2 >= 0.0f) ||
-              (w0 <= 0.0f && w1 <= 0.0f && w2 <= 0.0f))) continue;
+        if (!((w0 >= 0.0f && w1 >= 0.0f && w2 >= 0.0f) || (w0 <= 0.0f && w1 <= 0.0f && w2 <= 0.0f))) continue;
         w0/=area; w1/=area; w2/=area;
         const float invDepth=w0*p[0].invDepth+w1*p[1].invDepth+w2*p[2].invDepth;
         if (invDepth<=0.0f) continue;
         const float depth=1.0f/invDepth;
         const size_t pos=size_t(y)*size_t(_bufferWidth)+size_t(x);
         if (depth >= _zBuffer[pos]) continue;
-
         const float u=(w0*p[0].u*p[0].invDepth+w1*p[1].u*p[1].invDepth+w2*p[2].u*p[2].invDepth)/invDepth;
         const float v=(w0*p[0].v*p[0].invDepth+w1*p[1].v*p[1].invDepth+w2*p[2].v*p[2].invDepth)/invDepth;
         uint8_t sr=220,sg=220,sb=220,textureAlpha=255;
@@ -206,7 +203,6 @@ void Renderer::drawTexturedTriangle(const Vertex& a, const Vertex& b, const Vert
         }
         const uint8_t sa=uint8_t((uint16_t(materialAlpha)*uint16_t(textureAlpha)+127u)/255u);
         if (sa<12) continue;
-
         const float nx=w0*p[0].nx+w1*p[1].nx+w2*p[2].nx;
         const float ny=w0*p[0].ny+w1*p[1].ny+w2*p[2].ny;
         const float nz=w0*p[0].nz+w1*p[1].nz+w2*p[2].nz;
@@ -255,7 +251,6 @@ void Renderer::draw(const Model& model)
     const auto& verts=model.vertices();
     const auto& idx=model.indices();
     if (verts.empty()||idx.size()<3) { present(); return; }
-
     float minX=verts[0].position.x,maxX=minX,minY=verts[0].position.y,maxY=minY,minZ=verts[0].position.z,maxZ=minZ;
     for (const auto& v:verts) {
         minX=std::min(minX,v.position.x); maxX=std::max(maxX,v.position.x);
@@ -268,7 +263,6 @@ void Renderer::draw(const Model& model)
     const float span=std::max({maxX-minX,maxY-minY,maxZ-minZ,0.001f});
     _cameraDistance=span*2.0f;
     _focalLength=float(std::min(_bufferWidth,_bufferHeight))*0.92f;
-
     std::vector<Vertex> skinned=verts;
     const auto& bones=model.bones();
     if (!bones.empty()) {
@@ -289,7 +283,6 @@ void Renderer::draw(const Model& model)
             }
         }
     }
-
     const auto& mats=model.materials();
     size_t offset=0;
     for (const auto& mat:mats) {
@@ -303,7 +296,6 @@ void Renderer::draw(const Model& model)
         }
         offset+=count;
     }
-
     HDC dc=static_cast<HDC>(_backBufferDC);
     if (dc) {
         SetBkMode(dc,TRANSPARENT);
