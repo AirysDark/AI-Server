@@ -80,16 +80,34 @@ def chat(token, model, system_prompt, prompt, image_path=None, timeout=45):
         "max_tokens": 512,
         "temperature": 0.7,
     }
-    response = requests.post(
-        HF_URL,
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-        json=payload,
-        timeout=timeout,
-    )
+    try:
+        response = requests.post(
+            HF_URL,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json=payload,
+            timeout=timeout,
+        )
+    except requests.RequestException as e:
+        raise RuntimeError(f"Hugging Face connection error: {e}") from e
+
     try:
         data = response.json()
     except Exception:
         data = {"error": response.text[:500]}
-    if response.status_code >= 400 or not data.get("choices"):
-        raise RuntimeError(str(data))
-    return data["choices"][0]["message"]["content"]
+
+    if response.status_code >= 400:
+        error = data.get("error") if isinstance(data, dict) else data
+        if isinstance(error, dict):
+            error = error.get("message") or error.get("error") or str(error)
+        raise RuntimeError(f"Hugging Face HTTP {response.status_code}: {str(error)[:500]}")
+
+    if not isinstance(data, dict) or not data.get("choices"):
+        raise RuntimeError(f"Hugging Face returned no choices: {str(data)[:500]}")
+
+    message = data["choices"][0].get("message", {})
+    content = message.get("content") if isinstance(message, dict) else None
+    if isinstance(content, list):
+        content = "".join(str(x.get("text", "")) if isinstance(x, dict) else str(x) for x in content)
+    if not content:
+        raise RuntimeError("Hugging Face returned an empty response")
+    return str(content)
