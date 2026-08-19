@@ -7,10 +7,48 @@ namespace gene {
 struct Vec2 { float x{}, y{}; };
 struct Vec3 { float x{}, y{}, z{}; };
 struct Quaternion { float x{}, y{}, z{}, w{1.0f}; };
-struct Vertex { Vec3 position{}; Vec3 normal{}; Vec2 uv{}; };
-struct Material { std::string name; std::string englishName; int32_t textureIndex{-1}; int32_t sphereTextureIndex{-1}; uint32_t indexCount{}; };
-struct Bone { std::string name; std::string englishName; int parent{-1}; Vec3 position{}; Quaternion rotation{}; };
-struct Morph { std::string name; std::string englishName; int panel{}; uint8_t type{}; uint32_t offsetCount{}; };
+
+struct Vertex {
+    Vec3 position{};
+    Vec3 normal{};
+    Vec2 uv{};
+    uint8_t weightType{};
+    int32_t boneIndices[4]{-1, -1, -1, -1};
+    float boneWeights[4]{1.0f, 0.0f, 0.0f, 0.0f};
+};
+
+struct Material {
+    std::string name;
+    std::string englishName;
+    float diffuse[4]{1.0f, 1.0f, 1.0f, 1.0f};
+    float specular[3]{0.0f, 0.0f, 0.0f};
+    float ambient[3]{0.0f, 0.0f, 0.0f};
+    uint8_t flags{};
+    float edgeColor[4]{0.0f, 0.0f, 0.0f, 1.0f};
+    float edgeSize{};
+    int32_t textureIndex{-1};
+    int32_t sphereTextureIndex{-1};
+    uint8_t sphereMode{};
+    uint8_t toonFlag{};
+    uint8_t toonTextureIndex{};
+    uint32_t indexCount{};
+};
+
+struct Bone {
+    std::string name;
+    std::string englishName;
+    int parent{-1};
+    Vec3 position{};
+    Quaternion rotation{};
+};
+
+struct Morph {
+    std::string name;
+    std::string englishName;
+    int panel{};
+    uint8_t type{};
+    uint32_t offsetCount{};
+};
 
 class Model {
 public:
