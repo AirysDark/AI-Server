@@ -32,7 +32,7 @@ def login(handler,username,password):
  admin=ensure_admin()
  if str(username).strip()!=admin.get("username","admin") or not _verify(str(password),admin):return {"ok":False,"error":"Invalid administrator credentials"},401,None
  token=secrets.token_urlsafe(32);sessions=_sessions();sessions[token]={"username":admin.get("username","admin"),"created":time.time()};_write(ADMIN_SESSIONS_FILE,sessions)
- return {"ok":True,"must_change_password":bool(admin.get("must_change_password",False))},200,None if False else token
+ return {"ok":True,"must_change_password":bool(admin.get("must_change_password",False))},200,token
 def logout(handler):
  sessions=_sessions();sessions.pop(_cookie(handler,ADMIN_COOKIE),None);_write(ADMIN_SESSIONS_FILE,sessions)
 def change_password(handler,old_password,new_password):
@@ -49,14 +49,25 @@ def dashboard(handler):
  for uid,account in accounts.items():
   ais=server.list_ais(uid);result.append({"user_id":uid,"email":account.get("email"),"username":account.get("username"),"banned":bool(account.get("banned",False)),"ai_count":len(ais),"ais":ais})
  return {"ok":True,"accounts":result,"storage_dir":STORAGE_DIR,"user_storage_dir":USERS_DIR},200
+def _user_root(uid):return os.path.abspath(os.path.join(USERS_DIR,os.path.basename(uid)))
+def _safe_target(uid,relative):
+ root=_user_root(uid);target=os.path.abspath(os.path.join(root,str(relative or "").lstrip("/")))
+ if not target.startswith(root+os.sep):return None
+ return target
 def files(handler,uid=None,relative=""):
- root=os.path.abspath(USERS_DIR if not uid else os.path.join(USERS_DIR,os.path.basename(uid)));target=os.path.abspath(os.path.join(root,relative.lstrip("/")))
+ root=os.path.abspath(USERS_DIR if not uid else _user_root(uid));target=os.path.abspath(os.path.join(root,str(relative or "").lstrip("/")))
  if not target.startswith(root+os.sep) and target!=root:return {"ok":False,"error":"Invalid path"},400
  if not os.path.isdir(target):return {"ok":False,"error":"Directory not found"},404
  items=[]
  for name in sorted(os.listdir(target),key=str.lower):
   p=os.path.join(target,name);items.append({"name":name,"directory":os.path.isdir(p),"size":os.path.getsize(p) if os.path.isfile(p) else None})
  return {"ok":True,"path":os.path.relpath(target,USERS_DIR),"items":items},200
+def read_json_file(uid,relative):
+ target=_safe_target(uid,relative)
+ if not target or not os.path.isfile(target):return {"ok":False,"error":"File not found"},404
+ if not target.lower().endswith(".json"):return {"ok":False,"error":"Only JSON files can be viewed here"},400
+ try:return {"ok":True,"data":_read(target,{})},200
+ except Exception as exc:return {"ok":False,"error":str(exc)},500
 def account_detail(uid):
  server=_server_module();account=server.get_accounts().get("users",{}).get(uid)
  if not account:return {"ok":False,"error":"Account not found"},404
@@ -71,14 +82,14 @@ def update_account(uid,data):
   temp=secrets.token_urlsafe(9);account["password"]=server.hash_password(temp);account["must_change_password"]=True;result["temporary_password"]=temp
  server.save_json(server.AUTH_FILE,accounts);return result,200
 def update_json_file(uid,relative,data):
- root=os.path.abspath(os.path.join(USERS_DIR,os.path.basename(uid)));target=os.path.abspath(os.path.join(root,relative.lstrip("/")))
- if not target.startswith(root+os.sep) or not os.path.isfile(target):return {"ok":False,"error":"File not found"},404
+ target=_safe_target(uid,relative)
+ if not target or not os.path.isfile(target):return {"ok":False,"error":"File not found"},404
  if not target.lower().endswith(".json"):return {"ok":False,"error":"Only JSON files can be edited here"},400
  _write(target,data);return {"ok":True},200
 def delete_account(uid):
  server=_server_module();accounts=server.get_accounts();users=accounts.setdefault("users",{})
  if uid not in users:return {"ok":False,"error":"Account not found"},404
- users.pop(uid,None);server.save_json(server.AUTH_FILE,accounts);shutil.rmtree(os.path.join(USERS_DIR,uid),ignore_errors=True);return {"ok":True},200
+ users.pop(uid,None);server.save_json(server.AUTH_FILE,accounts);shutil.rmtree(_user_root(uid),ignore_errors=True);return {"ok":True},200
 def handle_get(handler,path,query):
  if not path.startswith("/api/admin/"):return False
  if not admin_user(handler):handler.send_json({"ok":False,"error":"Administrator authentication required"},status=401);return True
@@ -87,6 +98,7 @@ def handle_get(handler,path,query):
  if path=="/api/admin/dashboard":d,s=dashboard(handler);handler.send_json(d,status=s);return True
  if path=="/api/admin/account":d,s=account_detail((query.get("uid") or [""])[0]);handler.send_json(d,status=s);return True
  if path=="/api/admin/files":d,s=files(handler,(query.get("uid") or [None])[0],(query.get("path") or [""])[0]);handler.send_json(d,status=s);return True
+ if path=="/api/admin/file/read":d,s=read_json_file((query.get("uid") or [""])[0],(query.get("path") or [""])[0]);handler.send_json(d,status=s);return True
  return False
 def handle_post(handler,path,data):
  if path=="/api/admin/login":return True,login(handler,data.get("username"),data.get("password"))
