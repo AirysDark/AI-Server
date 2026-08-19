@@ -209,5 +209,9 @@ def ask_online_with_error(prompt, settings=None, knowledge="", image_path=None):
 
 
 def ask_online(prompt, settings=None, knowledge="", image_path=None):
-    reply, _error = ask_online_with_error(prompt, settings, knowledge, image_path)
-    return reply
+    reply, error = ask_online_with_error(prompt, settings, knowledge, image_path)
+    if reply:
+        return reply
+    if error and str(prompt).startswith("You are participating in a multi-AI conversation."):
+        return f"[ONLINE AI ERROR: {error}]"
+    return None
