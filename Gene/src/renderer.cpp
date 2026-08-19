@@ -174,6 +174,14 @@ void Renderer::drawTexturedTriangle(const Vertex& a, const Vertex& b, const Vert
     auto* dst = static_cast<uint32_t*>(_backBufferPixels);
     const bool textured = texture && texture->loaded() && texture->width > 0 && texture->height > 0;
 
+    // PMX diffuse alpha is the authoritative material transparency.  The old
+    // renderer treated every texture's RGBA alpha as transparency, which can
+    // turn perfectly opaque MMD materials into large holes when a texture uses
+    // its alpha channel as a mask/detail channel.  Only apply texture alpha to
+    // materials that are actually translucent in the PMX material data.
+    const bool materialTranslucent = material.diffuse[3] < 0.999f;
+    const uint8_t materialAlpha = uint8_t(std::clamp(material.diffuse[3] * 255.0f, 0.0f, 255.0f));
+
     for (int y=minY; y<=maxY; ++y) for (int x=minX; x<=maxX; ++x) {
         const float px=float(x)+0.5f, py=float(y)+0.5f;
         float w0=edge(p[1].x,p[1].y,p[2].x,p[2].y,px,py);
@@ -196,9 +204,13 @@ void Renderer::drawTexturedTriangle(const Vertex& a, const Vertex& b, const Vert
             const uint32_t tx=std::min(texture->width-1,uint32_t(std::max(0.0f,uu*float(texture->width))));
             const uint32_t ty=std::min(texture->height-1,uint32_t(std::max(0.0f,vv*float(texture->height))));
             const uint8_t* s=&texture->pixels[(size_t(ty)*texture->width+tx)*4];
-            sr=s[0]; sg=s[1]; sb=s[2]; sa=s[3];
+            sr=s[0]; sg=s[1]; sb=s[2];
+            sa = materialTranslucent ? uint8_t((uint16_t(s[3]) * uint16_t(materialAlpha) + 127u) / 255u) : 255u;
+        } else {
+            sa = materialAlpha;
         }
         if (sa<12) continue;
+
         const float nx=w0*p[0].nx+w1*p[1].nx+w2*p[2].nx;
         const float ny=w0*p[0].ny+w1*p[1].ny+w2*p[2].ny;
         const float nz=w0*p[0].nz+w1*p[1].nz+w2*p[2].nz;
@@ -261,8 +273,6 @@ void Renderer::draw(const Model& model)
     _cameraDistance=span*2.0f;
     _focalLength=float(std::min(_bufferWidth,_bufferHeight))*0.92f;
 
-    // Preserve PMX weighting information in a renderer-side copy. This is the
-    // stable bind-pose stage; animation matrices can replace these transforms later.
     std::vector<Vertex> skinned=verts;
     const auto& bones=model.bones();
     if (!bones.empty()) {
