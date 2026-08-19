@@ -1,9 +1,9 @@
 function updateTypingIndicator(name){$('typing').innerText=(name||'AI')+' is typing...'}
-function formatTime(time){return (typeof time==='string'?new Date(time):time).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}
+function formatTime(time){const d=time instanceof Date?time:new Date(typeof time==='number'?time*1000:time);return Number.isNaN(d.getTime())?'':d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}
 
 const COPY_ICON='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8V5a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3h-3v3a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3v-8a3 3 0 0 1 3-3h3Zm2 0h3a3 3 0 0 1 3 3v6h3a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1h-8a1 1 0 0 0 1 1v3Zm3 2H5a1 1 0 0 0-1 1v8a1 1 0 0 0-1-1v-8a1 1 0 0 0-1 1v3Z"/></svg>';
 const THUMB_UP_ICON='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v11H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3Zm2 11h7.2a2 2 0 0 0 1.94-1.52l2-8A2 2 0 0 0 18.2 9H14l.73-3.65A2.7 2.7 0 0 0 12.09 2L9 7.2V21Z"/></svg>';
-const THUMB_DOWN_ICON='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 14V3h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3ZM15 3H7.8a2 2 0 0 0-1.94 1.52l-2 8A2 2 0 0 0 5.8 15H10l-.73 3.65A2.7 2.7 0 0 0 11.91 22L15 16.8V3Z"/></svg>';
+const THUMB_DOWN_ICON='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 14V3h3a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-3ZM15 3H7.8a2 2 0 0 0-1.94 1.52l-2 8A2 2 0 0 0 5.8 15H10l-.73 3.65A2.7 2.7 0 0 0 11.91 22L15 16.8V3Z"/></svg>';
 
 function addMessageActions(container,text,message,type){
  if(type!=='AI')return;
