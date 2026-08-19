@@ -1,6 +1,6 @@
 #define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
 #include <windows.h>
-#include <algorithm>
 #include <string>
 #include <vector>
 #include "renderer.h"
@@ -18,14 +18,11 @@ static LRESULT CALLBACK GeneWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
         else
             DestroyWindow(hwnd);
         return 0;
-
     case WM_DESTROY:
         PostQuitMessage(0);
         return 0;
-
     case WM_ERASEBKGND:
         return 1;
-
     default:
         return DefWindowProcW(hwnd, msg, wParam, lParam);
     }
@@ -35,7 +32,6 @@ bool Renderer::initialize(uint32_t width, uint32_t height)
 {
     _width = width;
     _height = height;
-
     HINSTANCE instance = GetModuleHandleW(nullptr);
     const wchar_t* className = L"GeneRuntimeWindow";
 
@@ -49,20 +45,9 @@ bool Renderer::initialize(uint32_t width, uint32_t height)
     RECT rect = { 0, 0, static_cast<LONG>(_width), static_cast<LONG>(_height) };
     AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
 
-    HWND hwnd = CreateWindowExW(
-        0,
-        className,
-        L"Gene Runtime",
-        WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT,
-        CW_USEDEFAULT,
-        rect.right - rect.left,
-        rect.bottom - rect.top,
-        nullptr,
-        nullptr,
-        instance,
-        nullptr);
-
+    HWND hwnd = CreateWindowExW(0, className, L"Gene Runtime", WS_OVERLAPPEDWINDOW,
+        CW_USEDEFAULT, CW_USEDEFAULT, rect.right - rect.left, rect.bottom - rect.top,
+        nullptr, nullptr, instance, nullptr);
     if (hwnd == nullptr)
         return false;
 
@@ -80,9 +65,7 @@ void Renderer::pollEvents()
     while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE))
     {
         if (msg.message == WM_QUIT)
-        {
             _running = false;
-        }
         else
         {
             TranslateMessage(&msg);
@@ -130,30 +113,38 @@ void Renderer::draw(const Model& model)
 
     for (const Vertex& vertex : vertices)
     {
-        minX = std::min(minX, vertex.position.x);
-        maxX = std::max(maxX, vertex.position.x);
-        minY = std::min(minY, vertex.position.y);
-        maxY = std::max(maxY, vertex.position.y);
-        minZ = std::min(minZ, vertex.position.z);
-        maxZ = std::max(maxZ, vertex.position.z);
+        if (vertex.position.x < minX) minX = vertex.position.x;
+        if (vertex.position.x > maxX) maxX = vertex.position.x;
+        if (vertex.position.y < minY) minY = vertex.position.y;
+        if (vertex.position.y > maxY) maxY = vertex.position.y;
+        if (vertex.position.z < minZ) minZ = vertex.position.z;
+        if (vertex.position.z > maxZ) maxZ = vertex.position.z;
     }
 
     float centerX = (minX + maxX) * 0.5f;
     float centerY = (minY + maxY) * 0.5f;
     float centerZ = (minZ + maxZ) * 0.5f;
-    float span = std::max(std::max(maxX - minX, maxY - minY), std::max(maxZ - minZ, 0.001f));
-    float windowSpan = static_cast<float>(std::min(client.right - client.left, client.bottom - client.top));
-    float scale = windowSpan * 0.78f / span;
+
+    float spanX = maxX - minX;
+    float spanY = maxY - minY;
+    float spanZ = maxZ - minZ;
+    float span = spanX;
+    if (spanY > span) span = spanY;
+    if (spanZ > span) span = spanZ;
+    if (span < 0.001f) span = 0.001f;
+
+    int clientWidth = client.right - client.left;
+    int clientHeight = client.bottom - client.top;
+    int windowSize = clientWidth < clientHeight ? clientWidth : clientHeight;
+    float scale = static_cast<float>(windowSize) * 0.78f / span;
 
     std::vector<POINT> projected(vertices.size());
-
     for (size_t i = 0; i < vertices.size(); ++i)
     {
         const Vec3& position = vertices[i].position;
         float x = (position.x - centerX) * scale;
         float y = (position.y - centerY) * scale;
         float z = (position.z - centerZ) * scale;
-
         projected[i].x = static_cast<LONG>((client.right + client.left) * 0.5f + x - z * 0.35f);
         projected[i].y = static_cast<LONG>((client.bottom + client.top) * 0.5f - y - z * 0.20f);
     }
@@ -169,7 +160,6 @@ void Renderer::draw(const Model& model)
         uint32_t a = indices[triangle * 3];
         uint32_t b = indices[triangle * 3 + 1];
         uint32_t c = indices[triangle * 3 + 2];
-
         if (a >= projected.size() || b >= projected.size() || c >= projected.size())
             continue;
 
@@ -181,11 +171,9 @@ void Renderer::draw(const Model& model)
 
     SelectObject(dc, oldPen);
     DeleteObject(pen);
-
     SetBkMode(dc, TRANSPARENT);
     DrawTextW(dc, L"Gene Runtime - PMX geometry", -1, &client,
         DT_TOP | DT_CENTER | DT_NOPREFIX);
-
     ReleaseDC(hwnd, dc);
 }
 
@@ -214,7 +202,6 @@ void Renderer::shutdown()
     HWND hwnd = static_cast<HWND>(_window);
     _window = nullptr;
     _running = false;
-
     if (hwnd != nullptr)
         DestroyWindow(hwnd);
 }
