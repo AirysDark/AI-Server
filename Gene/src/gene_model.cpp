@@ -1,9 +1,9 @@
 #include "gene_model.h"
-#include <fstream>
+#include <algorithm>
+#include <cmath>
 #include <cstring>
+#include <fstream>
 #include <utility>
-#include <vector>
-#include <string>
 
 namespace gene {
 namespace {
@@ -13,9 +13,9 @@ public:
     template<class T> bool read(T& v) { _in.read(reinterpret_cast<char*>(&v), sizeof(T)); return bool(_in); }
     bool bytes(void* p, std::streamsize n) { _in.read(reinterpret_cast<char*>(p), n); return bool(_in); }
     bool u8(uint8_t& v) { return read(v); }
+    bool u16(uint16_t& v) { return read(v); }
     bool i32(int32_t& v) { return read(v); }
     bool u32(uint32_t& v) { return read(v); }
-    bool u16(uint16_t& v) { return read(v); }
     bool f32(float& v) { return read(v); }
     bool index(int32_t& out, uint8_t size, bool signedIndex) {
         if (size == 1) { uint8_t v{}; if (!read(v)) return false; out = signedIndex ? int8_t(v) : int32_t(v); return true; }
@@ -33,8 +33,7 @@ public:
             out.clear();
             for (size_t i = 0; i + 1 < raw.size(); i += 2) {
                 const uint16_t c = uint8_t(raw[i]) | (uint16_t(uint8_t(raw[i + 1])) << 8);
-                if (c < 128 && !(c >= 0xD800 && c <= 0xDFFF)) out.push_back(char(c));
-                else out.push_back('?');
+                out.push_back(c < 128 && !(c >= 0xD800 && c <= 0xDFFF) ? char(c) : '?');
             }
         } else {
             out = std::move(raw);
@@ -44,6 +43,7 @@ public:
 private:
     std::istream& _in;
 };
+bool validIndex(uint8_t s) { return s == 1 || s == 2 || s == 4; }
 }
 
 bool Model::fail(const std::string& message) { _loaded = false; _error = message; return false; }
@@ -53,8 +53,10 @@ bool Model::loadPmx(const std::string& path)
     _loaded = false;
     _error.clear();
     _vertices.clear();
+    _baseVertices.clear();
     _indices.clear();
     _materials.clear();
+    _baseMaterials.clear();
     _textures.clear();
     _bones.clear();
     _morphs.clear();
@@ -63,208 +65,240 @@ bool Model::loadPmx(const std::string& path)
     std::ifstream in(path, std::ios::binary);
     if (!in) return fail("cannot open file");
     Reader r(in);
-
     char magic[4]{};
-    if (!in.read(magic, 4) || std::memcmp(magic, "PMX ", 4) != 0)
-        return fail("invalid PMX signature");
+    if (!in.read(magic, 4) || std::memcmp(magic, "PMX ", 4) != 0) return fail("invalid PMX signature");
 
     uint8_t headerSize{};
-    if (!r.f32(_version) || !r.u8(headerSize)) return fail("truncated PMX header");
-    if (headerSize != 8) return fail("invalid PMX header size: " + std::to_string(headerSize));
+    if (!r.f32(_version) || !r.u8(headerSize) || headerSize != 8) return fail("invalid PMX header");
+    uint8_t h[8]{};
+    if (!r.bytes(h, 8)) return fail("truncated PMX header");
+    const uint8_t encoding = h[0], uvCount = h[1], vertexIndexSize = h[2], textureIndexSize = h[3];
+    const uint8_t materialIndexSize = h[4], boneIndexSize = h[5], morphIndexSize = h[6], rigidBodyIndexSize = h[7];
+    if (encoding > 1 || uvCount > 4 || !validIndex(vertexIndexSize) || !validIndex(textureIndexSize) ||
+        !validIndex(materialIndexSize) || !validIndex(boneIndexSize) || !validIndex(morphIndexSize) || !validIndex(rigidBodyIndexSize))
+        return fail("invalid PMX index configuration");
 
-    uint8_t header[8]{};
-    if (!r.bytes(header, 8)) return fail("truncated PMX header data");
-    const uint8_t encoding = header[0];
-    const uint8_t uvCount = header[1];
-    const uint8_t vertexIndexSize = header[2];
-    const uint8_t textureIndexSize = header[3];
-    const uint8_t materialIndexSize = header[4];
-    const uint8_t boneIndexSize = header[5];
-    const uint8_t morphIndexSize = header[6];
-    const uint8_t rigidBodyIndexSize = header[7];
+    std::string s;
+    for (int i = 0; i < 4; ++i) if (!r.text(s, encoding)) return fail("failed PMX strings");
 
-    auto validIndex = [](uint8_t s) { return s == 1 || s == 2 || s == 4; };
-    if (encoding > 1) return fail("unsupported text encoding " + std::to_string(encoding));
-    if (uvCount > 4) return fail("invalid additional UV count " + std::to_string(uvCount));
-    if (!validIndex(vertexIndexSize) || !validIndex(textureIndexSize) || !validIndex(materialIndexSize) ||
-        !validIndex(boneIndexSize) || !validIndex(morphIndexSize) || !validIndex(rigidBodyIndexSize))
-        return fail("invalid PMX index size in header");
-
-    std::string name, english, comment, englishComment;
-    if (!r.text(name, encoding) || !r.text(english, encoding) || !r.text(comment, encoding) || !r.text(englishComment, encoding))
-        return fail("failed reading model strings");
-
-    uint32_t vertexCount{};
-    if (!r.u32(vertexCount) || vertexCount > 10000000) return fail("invalid vertex count");
-    _vertices.resize(vertexCount);
-
-    for (uint32_t vi = 0; vi < vertexCount; ++vi) {
+    uint32_t count{};
+    float f{};
+    int32_t idx{};
+    if (!r.u32(count) || count > 10000000) return fail("invalid vertex count");
+    _vertices.resize(count);
+    for (uint32_t vi = 0; vi < count; ++vi) {
         auto& v = _vertices[vi];
-        if (!r.vec3(v.position.x, v.position.y, v.position.z) || !r.vec3(v.normal.x, v.normal.y, v.normal.z) ||
-            !r.f32(v.uv.x) || !r.f32(v.uv.y)) return fail("failed vertex " + std::to_string(vi));
-
-        float f{};
-        for (uint8_t n = 0; n < uvCount; ++n)
-            for (int c = 0; c < 4; ++c)
-                if (!r.f32(f)) return fail("failed additional UV at vertex " + std::to_string(vi));
-
+        if (!r.vec3(v.position.x, v.position.y, v.position.z) || !r.vec3(v.normal.x, v.normal.y, v.normal.z) || !r.f32(v.uv.x) || !r.f32(v.uv.y))
+            return fail("failed vertex " + std::to_string(vi));
+        for (uint8_t n = 0; n < uvCount; ++n) for (int c = 0; c < 4; ++c) if (!r.f32(f)) return fail("failed additional UV");
         uint8_t weight{};
-        if (!r.u8(weight)) return fail("failed weight type at vertex " + std::to_string(vi));
+        if (!r.u8(weight)) return fail("failed weight type");
         v.weightType = weight;
         for (int n = 0; n < 4; ++n) { v.boneIndices[n] = -1; v.boneWeights[n] = 0.0f; }
-
-        int32_t idx{};
         switch (weight) {
-        case 0: // BDEF1
-            if (!r.index(idx, boneIndexSize, true)) return fail("bad BDEF1 at vertex " + std::to_string(vi));
-            v.boneIndices[0] = idx; v.boneWeights[0] = 1.0f;
-            break;
-        case 1: { // BDEF2
+        case 0:
+            if (!r.index(idx, boneIndexSize, true)) return fail("bad BDEF1");
+            v.boneIndices[0] = idx; v.boneWeights[0] = 1.0f; break;
+        case 1: {
             float w{};
-            if (!r.index(v.boneIndices[0], boneIndexSize, true) || !r.index(v.boneIndices[1], boneIndexSize, true) || !r.f32(w))
-                return fail("bad BDEF2 at vertex " + std::to_string(vi));
-            v.boneWeights[0] = w; v.boneWeights[1] = 1.0f - w;
+            if (!r.index(v.boneIndices[0], boneIndexSize, true) || !r.index(v.boneIndices[1], boneIndexSize, true) || !r.f32(w)) return fail("bad BDEF2");
+            v.boneWeights[0] = w; v.boneWeights[1] = 1.0f - w; break;
+        }
+        case 2:
+        case 4:
+            for (int n = 0; n < 4; ++n) if (!r.index(v.boneIndices[n], boneIndexSize, true)) return fail("bad BDEF4/QDEF");
+            for (int n = 0; n < 4; ++n) if (!r.f32(v.boneWeights[n])) return fail("bad BDEF4/QDEF weights");
             break;
+        case 3: {
+            float w{}, tmp{};
+            if (!r.index(v.boneIndices[0], boneIndexSize, true) || !r.index(v.boneIndices[1], boneIndexSize, true) || !r.f32(w)) return fail("bad SDEF");
+            for (int n = 0; n < 9; ++n) if (!r.f32(tmp)) return fail("bad SDEF data");
+            v.boneWeights[0] = w; v.boneWeights[1] = 1.0f - w; break;
         }
-        case 2: // BDEF4
-        case 4: { // QDEF
-            for (int n = 0; n < 4; ++n) if (!r.index(v.boneIndices[n], boneIndexSize, true)) return fail("bad BDEF4/QDEF index at vertex " + std::to_string(vi));
-            for (int n = 0; n < 4; ++n) if (!r.f32(v.boneWeights[n])) return fail("bad BDEF4/QDEF weights at vertex " + std::to_string(vi));
-            break;
+        default: return fail("unknown vertex weight type " + std::to_string(weight));
         }
-        case 3: { // SDEF
-            float weight2{}, tmp{};
-            if (!r.index(v.boneIndices[0], boneIndexSize, true) || !r.index(v.boneIndices[1], boneIndexSize, true) || !r.f32(weight2))
-                return fail("bad SDEF bones at vertex " + std::to_string(vi));
-            // C, R0, R1. We retain the dominant two-bone weights; full SDEF deformation can be added later.
-            for (int n = 0; n < 9; ++n) if (!r.f32(tmp)) return fail("bad SDEF data at vertex " + std::to_string(vi));
-            v.boneWeights[0] = weight2; v.boneWeights[1] = 1.0f - weight2;
-            break;
-        }
-        default:
-            return fail("unknown vertex weight type " + std::to_string(weight));
-        }
-        if (!r.f32(f)) return fail("failed edge scale at vertex " + std::to_string(vi));
+        if (!r.f32(f)) return fail("failed edge scale");
     }
 
     if (!r.u32(_indexCount) || _indexCount > 30000000) return fail("invalid index count");
     _indices.resize(_indexCount);
     for (uint32_t i = 0; i < _indexCount; ++i) {
-        int32_t idx{};
-        if (!r.index(idx, vertexIndexSize, false) || idx < 0 || uint32_t(idx) >= vertexCount)
-            return fail("invalid vertex index " + std::to_string(i));
+        if (!r.index(idx, vertexIndexSize, false) || idx < 0 || uint32_t(idx) >= _vertices.size()) return fail("invalid vertex index");
         _indices[i] = uint32_t(idx);
     }
 
-    uint32_t textureCount{};
-    if (!r.u32(textureCount) || textureCount > 1000000) return fail("invalid texture count");
-    _textures.resize(textureCount);
-    for (uint32_t i = 0; i < textureCount; ++i)
-        if (!r.text(_textures[i], encoding)) return fail("failed texture path " + std::to_string(i));
+    if (!r.u32(count) || count > 1000000) return fail("invalid texture count");
+    _textures.resize(count);
+    for (auto& texture : _textures) if (!r.text(texture, encoding)) return fail("failed texture path");
 
-    uint32_t materialCount{};
-    if (!r.u32(materialCount) || materialCount > 1000000) return fail("invalid material count");
-    _materials.reserve(materialCount);
-
-    for (uint32_t i = 0; i < materialCount; ++i) {
+    if (!r.u32(count) || count > 1000000) return fail("invalid material count");
+    _materials.reserve(count);
+    for (uint32_t i = 0; i < count; ++i) {
         Material m{};
-        float f{};
-        int32_t idx{};
-        if (!r.text(m.name, encoding) || !r.text(m.englishName, encoding)) return fail("failed material name " + std::to_string(i));
-        for (int n = 0; n < 4; ++n) if (!r.f32(m.diffuse[n])) return fail("failed material diffuse " + std::to_string(i));
-        for (int n = 0; n < 3; ++n) if (!r.f32(m.specular[n])) return fail("failed material specular " + std::to_string(i));
-        if (!r.f32(f)) return fail("failed material specular power " + std::to_string(i));
-        for (int n = 0; n < 3; ++n) if (!r.f32(m.ambient[n])) return fail("failed material ambient " + std::to_string(i));
-        if (!r.u8(m.flags)) return fail("failed material flags " + std::to_string(i));
-        for (int n = 0; n < 4; ++n) if (!r.f32(m.edgeColor[n])) return fail("failed material edge colour " + std::to_string(i));
-        if (!r.f32(m.edgeSize)) return fail("failed material edge size " + std::to_string(i));
-        if (!r.index(idx, textureIndexSize, true)) return fail("failed material texture index " + std::to_string(i));
-        m.textureIndex = idx;
-        if (!r.index(idx, textureIndexSize, true)) return fail("failed material sphere texture index " + std::to_string(i));
-        m.sphereTextureIndex = idx;
-        if (!r.u8(m.sphereMode)) return fail("failed material sphere mode " + std::to_string(i));
-        if (!r.u8(m.toonFlag)) return fail("failed material toon flag " + std::to_string(i));
-        if (m.toonFlag == 0) {
-            if (!r.index(idx, textureIndexSize, true)) return fail("failed material toon texture " + std::to_string(i));
-            m.toonTextureIndex = 0;
-        } else {
-            uint8_t toon{};
-            if (!r.u8(toon)) return fail("failed material toon index " + std::to_string(i));
-            m.toonTextureIndex = toon;
-        }
-        std::string memo;
-        if (!r.text(memo, encoding)) return fail("failed material memo " + std::to_string(i));
+        if (!r.text(m.name, encoding) || !r.text(m.englishName, encoding)) return fail("failed material name");
+        for (float& x : m.diffuse) if (!r.f32(x)) return fail("failed diffuse");
+        for (float& x : m.specular) if (!r.f32(x)) return fail("failed specular");
+        if (!r.f32(f)) return fail("failed specular power");
+        for (float& x : m.ambient) if (!r.f32(x)) return fail("failed ambient");
+        if (!r.u8(m.flags)) return fail("failed material flags");
+        for (float& x : m.edgeColor) if (!r.f32(x)) return fail("failed edge color");
+        if (!r.f32(m.edgeSize)) return fail("failed edge size");
+        if (!r.index(idx, textureIndexSize, true)) return fail("failed texture index"); m.textureIndex = idx;
+        if (!r.index(idx, textureIndexSize, true)) return fail("failed sphere index"); m.sphereTextureIndex = idx;
+        if (!r.u8(m.sphereMode) || !r.u8(m.toonFlag)) return fail("failed sphere/toon flags");
+        if (m.toonFlag == 0) { if (!r.index(idx, textureIndexSize, true)) return fail("failed toon index"); }
+        else if (!r.u8(m.toonTextureIndex)) return fail("failed toon texture");
+        if (!r.text(s, encoding)) return fail("failed material memo");
         int32_t faces{};
-        if (!r.i32(faces) || faces < 0) return fail("invalid material face count " + std::to_string(i));
+        if (!r.i32(faces) || faces < 0) return fail("invalid material face count");
         m.indexCount = uint32_t(faces);
         _materials.push_back(std::move(m));
     }
 
-    uint32_t boneCount{};
-    if (!r.u32(boneCount) || boneCount > 1000000) return fail("invalid bone count");
-    _bones.reserve(boneCount);
-    for (uint32_t i = 0; i < boneCount; ++i) {
+    if (!r.u32(count) || count > 1000000) return fail("invalid bone count");
+    _bones.reserve(count);
+    for (uint32_t i = 0; i < count; ++i) {
         Bone b{};
-        if (!r.text(b.name, encoding) || !r.text(b.englishName, encoding) || !r.vec3(b.position.x, b.position.y, b.position.z))
-            return fail("failed bone strings/position " + std::to_string(i));
-        int32_t parent{};
-        if (!r.index(parent, boneIndexSize, true)) return fail("failed bone parent " + std::to_string(i));
-        b.parent = parent;
-        int32_t transformDepth{};
-        if (!r.i32(transformDepth)) return fail("failed bone transform depth " + std::to_string(i));
-        uint16_t flags{};
-        if (!r.u16(flags)) return fail("failed bone flags " + std::to_string(i));
-        int32_t idx{}; float f{};
-        if (flags & 0x0001) { if (!r.index(idx, boneIndexSize, true)) return fail("bad bone connection " + std::to_string(i)); }
-        else { for (int n = 0; n < 3; ++n) if (!r.f32(f)) return fail("bad bone position offset " + std::to_string(i)); }
-        if (flags & (0x0100 | 0x0200)) { if (!r.index(idx, boneIndexSize, true) || !r.f32(f)) return fail("bad bone inherit data " + std::to_string(i)); }
-        if (flags & 0x0400) for (int n = 0; n < 3; ++n) if (!r.f32(f)) return fail("bad bone fixed axis " + std::to_string(i));
-        if (flags & 0x0800) for (int n = 0; n < 6; ++n) if (!r.f32(f)) return fail("bad bone local axis " + std::to_string(i));
-        if (flags & 0x2000) { if (!r.i32(idx)) return fail("bad external parent key " + std::to_string(i)); }
+        if (!r.text(b.name, encoding) || !r.text(b.englishName, encoding) || !r.vec3(b.position.x, b.position.y, b.position.z)) return fail("failed bone");
+        if (!r.index(idx, boneIndexSize, true)) return fail("failed bone parent"); b.parent = idx;
+        int32_t transformDepth{}; uint16_t flags{};
+        if (!r.i32(transformDepth) || !r.u16(flags)) return fail("failed bone depth/flags");
+        if (flags & 0x0001) { if (!r.index(idx, boneIndexSize, true)) return fail("bad bone connection"); }
+        else for (int n = 0; n < 3; ++n) if (!r.f32(f)) return fail("bad bone offset");
+        if (flags & (0x0100 | 0x0200)) { if (!r.index(idx, boneIndexSize, true) || !r.f32(f)) return fail("bad bone inherit"); }
+        if (flags & 0x0400) for (int n = 0; n < 3; ++n) if (!r.f32(f)) return fail("bad fixed axis");
+        if (flags & 0x0800) for (int n = 0; n < 6; ++n) if (!r.f32(f)) return fail("bad local axis");
+        if (flags & 0x2000) if (!r.i32(idx)) return fail("bad external parent");
         if (flags & 0x0020) {
-            if (!r.index(idx, boneIndexSize, true)) return fail("bad IK target " + std::to_string(i));
-            int32_t loopCount{};
-            if (!r.i32(loopCount) || loopCount < 0) return fail("invalid IK loop count on bone " + std::to_string(i));
-            if (!r.f32(f)) return fail("bad IK loop angle " + std::to_string(i));
-            int32_t linkCount{};
-            if (!r.i32(linkCount) || linkCount < 0 || linkCount > 100000) return fail("invalid IK link count on bone " + std::to_string(i));
+            if (!r.index(idx, boneIndexSize, true)) return fail("bad IK target");
+            int32_t loopCount{}, linkCount{};
+            if (!r.i32(loopCount) || loopCount < 0 || !r.f32(f) || !r.i32(linkCount) || linkCount < 0 || linkCount > 100000) return fail("bad IK");
             for (int32_t k = 0; k < linkCount; ++k) {
-                if (!r.index(idx, boneIndexSize, true)) return fail("bad IK link on bone " + std::to_string(i));
                 uint8_t hasLimit{};
-                if (!r.u8(hasLimit) || hasLimit > 1) return fail("bad IK limit flag on bone " + std::to_string(i));
-                if (hasLimit) for (int n = 0; n < 6; ++n) if (!r.f32(f)) return fail("bad IK limit data on bone " + std::to_string(i));
+                if (!r.index(idx, boneIndexSize, true) || !r.u8(hasLimit)) return fail("bad IK link");
+                if (hasLimit) for (int n = 0; n < 6; ++n) if (!r.f32(f)) return fail("bad IK limit");
             }
         }
         _bones.push_back(std::move(b));
     }
 
-    uint32_t morphCount{};
-    if (!r.u32(morphCount) || morphCount > 1000000) return fail("invalid morph count");
-    _morphs.reserve(morphCount);
-    for (uint32_t i = 0; i < morphCount; ++i) {
-        Morph m{};
-        if (!r.text(m.name, encoding) || !r.text(m.englishName, encoding)) return fail("failed morph name " + std::to_string(i));
-        uint8_t panel{}, type{};
-        if (!r.u8(panel) || !r.u8(type) || !r.u32(m.offsetCount)) return fail("failed morph header " + std::to_string(i));
-        m.panel = panel; m.type = type;
-        for (uint32_t j = 0; j < m.offsetCount; ++j) {
-            float f{}; int32_t idx{};
+    if (!r.u32(count) || count > 1000000) return fail("invalid morph count");
+    _morphs.reserve(count);
+    for (uint32_t i = 0; i < count; ++i) {
+        Morph m{}; uint8_t type{};
+        if (!r.text(m.name, encoding) || !r.text(m.englishName, encoding) || !r.u8(m.panel) || !r.u8(type) || !r.u32(m.offsetCount)) return fail("failed morph header");
+        m.type = static_cast<MorphType>(type); m.offsets.resize(m.offsetCount);
+        for (auto& o : m.offsets) {
+            o.type = m.type;
             switch (type) {
-            case 0: if (!r.index(idx, morphIndexSize, true) || !r.f32(f)) return fail("bad group morph " + std::to_string(i)); break;
-            case 1: if (!r.index(idx, vertexIndexSize, true)) return fail("bad vertex morph index " + std::to_string(i)); for (int n = 0; n < 3; ++n) if (!r.f32(f)) return fail("bad vertex morph data " + std::to_string(i)); break;
-            case 2: if (!r.index(idx, boneIndexSize, true)) return fail("bad bone morph index " + std::to_string(i)); for (int n = 0; n < 7; ++n) if (!r.f32(f)) return fail("bad bone morph data " + std::to_string(i)); break;
-            case 3: case 4: case 5: case 6: case 7: if (!r.index(idx, vertexIndexSize, true)) return fail("bad UV morph index " + std::to_string(i)); for (int n = 0; n < 4; ++n) if (!r.f32(f)) return fail("bad UV morph data " + std::to_string(i)); break;
-            case 8: if (!r.index(idx, materialIndexSize, true)) return fail("bad material morph index " + std::to_string(i)); { uint8_t calcMode{}; if (!r.u8(calcMode)) return fail("bad material morph calc mode " + std::to_string(i)); } for (int n = 0; n < 28; ++n) if (!r.f32(f)) return fail("bad material morph data " + std::to_string(i)); break;
-            case 9: if (_version < 2.1f) return fail("flip morph in PMX 2.0"); if (!r.index(idx, morphIndexSize, true) || !r.f32(f)) return fail("bad flip morph " + std::to_string(i)); break;
-            case 10: if (_version < 2.1f) return fail("impulse morph in PMX 2.0"); if (!r.index(idx, rigidBodyIndexSize, true)) return fail("bad impulse rigid-body index " + std::to_string(i)); { uint8_t localFlag{}; if (!r.u8(localFlag)) return fail("bad impulse local flag " + std::to_string(i)); } for (int n = 0; n < 6; ++n) if (!r.f32(f)) return fail("bad impulse morph data " + std::to_string(i)); break;
-            default: return fail("unsupported morph type " + std::to_string(type) + " at morph " + std::to_string(i));
+            case 0: case 9:
+                if (!r.index(o.index, morphIndexSize, true) || !r.f32(o.weight)) return fail("bad group/flip morph"); break;
+            case 1:
+                if (!r.index(o.index, vertexIndexSize, false) || !r.f32(o.position.x) || !r.f32(o.position.y) || !r.f32(o.position.z)) return fail("bad vertex morph"); break;
+            case 2:
+                if (!r.index(o.index, boneIndexSize, true) || !r.f32(o.position.x) || !r.f32(o.position.y) || !r.f32(o.position.z) || !r.f32(o.rotation.x) || !r.f32(o.rotation.y) || !r.f32(o.rotation.z) || !r.f32(o.rotation.w)) return fail("bad bone morph"); break;
+            case 3: case 4: case 5: case 6: case 7:
+                if (!r.index(o.index, vertexIndexSize, false)) return fail("bad UV morph index");
+                for (float& x : o.uv) if (!r.f32(x)) return fail("bad UV morph"); break;
+            case 8:
+                if (!r.index(o.index, materialIndexSize, true) || !r.u8(o.operation) || o.operation > 1) return fail("bad material morph operation");
+                for (float& x : o.diffuse) if (!r.f32(x)) return fail("bad material diffuse morph");
+                for (float& x : o.specular) if (!r.f32(x)) return fail("bad material specular morph");
+                if (!r.f32(o.shininess)) return fail("bad material shininess morph");
+                for (float& x : o.ambient) if (!r.f32(x)) return fail("bad material ambient morph");
+                for (float& x : o.edgeColor) if (!r.f32(x)) return fail("bad material edge morph");
+                if (!r.f32(o.edgeSize)) return fail("bad material edge size morph");
+                for (float& x : o.textureFactor) if (!r.f32(x)) return fail("bad texture factor morph");
+                for (float& x : o.sphereTextureFactor) if (!r.f32(x)) return fail("bad sphere factor morph");
+                for (float& x : o.toonTextureFactor) if (!r.f32(x)) return fail("bad toon factor morph");
+                break;
+            case 10:
+                if (!r.index(o.index, rigidBodyIndexSize, true) || !r.u8(o.localFlag) || !r.f32(o.velocity.x) || !r.f32(o.velocity.y) || !r.f32(o.velocity.z) || !r.f32(o.torque.x) || !r.f32(o.torque.y) || !r.f32(o.torque.z)) return fail("bad impulse morph");
+                break;
+            default: return fail("unsupported morph type " + std::to_string(type));
             }
         }
         _morphs.push_back(std::move(m));
     }
 
+    _baseVertices = _vertices;
+    _baseMaterials = _materials;
     _loaded = true;
     return true;
 }
 
-} // namespace gene
+bool Model::setMorphWeight(const std::string& name, float value)
+{
+    for (auto& morph : _morphs) if (morph.name == name) { morph.value = value; updateMorphs(); return true; }
+    return false;
+}
+
+void Model::clearMorphWeights()
+{
+    for (auto& morph : _morphs) morph.value = 0.0f;
+    updateMorphs();
+}
+
+void Model::applyMorph(size_t index, float weight, std::vector<float>& weights, std::vector<uint8_t>& visiting)
+{
+    if (index >= _morphs.size() || std::fabs(weight) < 1e-7f || visiting[index]) return;
+    visiting[index] = 1;
+    const auto& morph = _morphs[index];
+    if (morph.type == MorphType::Group || morph.type == MorphType::Flip) {
+        for (const auto& offset : morph.offsets)
+            if (offset.index >= 0 && size_t(offset.index) < _morphs.size())
+                applyMorph(size_t(offset.index), weight * offset.weight, weights, visiting);
+    } else {
+        weights[index] += weight;
+    }
+    visiting[index] = 0;
+}
+
+void Model::updateMorphs()
+{
+    _vertices = _baseVertices;
+    _materials = _baseMaterials;
+    std::vector<float> weights(_morphs.size(), 0.0f);
+    std::vector<uint8_t> visiting(_morphs.size(), 0);
+    for (size_t i = 0; i < _morphs.size(); ++i)
+        if (std::fabs(_morphs[i].value) > 1e-7f) applyMorph(i, _morphs[i].value, weights, visiting);
+
+    for (size_t i = 0; i < _morphs.size(); ++i) {
+        const float weight = weights[i];
+        if (std::fabs(weight) < 1e-7f) continue;
+        const auto& morph = _morphs[i];
+        if (morph.type == MorphType::Vertex) {
+            for (const auto& o : morph.offsets) if (o.index >= 0 && size_t(o.index) < _vertices.size()) {
+                _vertices[o.index].position.x += o.position.x * weight;
+                _vertices[o.index].position.y += o.position.y * weight;
+                _vertices[o.index].position.z += o.position.z * weight;
+            }
+        } else if (morph.type >= MorphType::UV && morph.type <= MorphType::UV4) {
+            for (const auto& o : morph.offsets) if (o.index >= 0 && size_t(o.index) < _vertices.size()) {
+                _vertices[o.index].uv.x += o.uv[0] * weight;
+                _vertices[o.index].uv.y += o.uv[1] * weight;
+            }
+        } else if (morph.type == MorphType::Material) {
+            for (const auto& o : morph.offsets) {
+                auto apply = [&](Material& mat) {
+                    if (o.operation == 1) {
+                        for (int n = 0; n < 4; ++n) mat.diffuse[n] += o.diffuse[n] * weight;
+                        for (int n = 0; n < 3; ++n) mat.specular[n] += o.specular[n] * weight;
+                        for (int n = 0; n < 3; ++n) mat.ambient[n] += o.ambient[n] * weight;
+                        for (int n = 0; n < 4; ++n) mat.edgeColor[n] += o.edgeColor[n] * weight;
+                        mat.edgeSize += o.edgeSize * weight;
+                    } else {
+                        for (int n = 0; n < 4; ++n) mat.diffuse[n] *= 1.0f + (o.diffuse[n] - 1.0f) * weight;
+                        for (int n = 0; n < 3; ++n) mat.specular[n] *= 1.0f + (o.specular[n] - 1.0f) * weight;
+                        for (int n = 0; n < 3; ++n) mat.ambient[n] *= 1.0f + (o.ambient[n] - 1.0f) * weight;
+                        for (int n = 0; n < 4; ++n) mat.edgeColor[n] *= 1.0f + (o.edgeColor[n] - 1.0f) * weight;
+                        mat.edgeSize *= 1.0f + (o.edgeSize - 1.0f) * weight;
+                    }
+                };
+                if (o.index < 0) for (auto& mat : _materials) apply(mat);
+                else if (size_t(o.index) < _materials.size()) apply(_materials[o.index]);
+            }
+        }
+    }
+}
+}
