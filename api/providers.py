@@ -7,10 +7,18 @@ from api.openrouter import chat as openrouter_chat
 
 def provider_name(settings):
     value = str(settings.get("api_provider") or settings.get("provider") or "huggingface").strip().lower()
-    if value in ("openai", "openai-compatible", "openai_compatible"):
-        return "openai"
+    endpoint = str(settings.get("api_endpoint") or "").strip().lower()
+    model = str(settings.get("api_model") or "").strip().lower()
+
+    # Older OpenRouter settings were saved as "openai" because OpenRouter is
+    # OpenAI-compatible. Detect those persisted settings from their endpoint
+    # or model so they cannot accidentally be sent to api.openai.com.
+    if "openrouter.ai" in endpoint or model.startswith("openrouter/") or model.endswith(":free"):
+        return "openrouter"
     if value in ("openrouter", "openrouter.ai"):
         return "openrouter"
+    if value in ("openai", "openai-compatible", "openai_compatible"):
+        return "openai"
     if value in ("google", "google-ai-studio", "google_ai_studio", "gemini"):
         return "google"
     return "huggingface"
