@@ -147,6 +147,7 @@ def _ask_provider(prompt, settings, knowledge, image_path, provider):
         models += [m for m in (google.VISION_MODELS if image_path else google.TEXT_MODELS) if m not in models]
         for model in google.discover_models(token):
             if model not in models: models.append(model)
+        errors = []
         for model in models:
             key = _health_key("google", model, token)
             if not _available(key): continue
@@ -156,19 +157,20 @@ def _ask_provider(prompt, settings, knowledge, image_path, provider):
                 _mark_success(key); learn_online_response(prompt, reply, settings)
                 return reply
             except Exception as e:
-                _mark_failure(key, e); print("ONLINE AI GOOGLE FAILED:", model, e)
-        raise RuntimeError("Google AI Studio request failed for all available models")
+                _mark_failure(key, e); errors.append(f"{model}: {str(e)[:300]}"); print("ONLINE AI GOOGLE FAILED:", model, e)
+        detail = "; ".join(errors) if errors else "all available models are cooling down after previous failures"
+        raise RuntimeError(f"Google AI Studio request failed: {detail}")
     if provider == "openai":
         model = str(local.get("api_model") or "").strip() or "gpt-4o-mini"
         key = _health_key("openai", f"{local.get('api_endpoint') or 'default'}:{model}", token)
         if not _available(key):
-            raise RuntimeError("OpenAI provider is temporarily cooling down after previous failures")
+            raise RuntimeError("OpenAI provider is temporarily cooling down after a previous failure")
         try:
             reply = _api_call(key, lambda: provider_chat(token, local, system_prompt, prompt, image_path=image_path, model=model))
             if not reply: raise RuntimeError("OpenAI returned an empty response")
             _mark_success(key); learn_online_response(prompt, reply, settings); return reply
         except Exception as e:
-            _mark_failure(key, e); print("ONLINE AI OPENAI FAILED:", e); raise
+            _mark_failure(key, e); print("ONLINE AI OPENAI FAILED:", e); raise RuntimeError(f"OpenAI request failed: {str(e)[:500]}") from e
     models = huggingface.VISION_MODELS if image_path else huggingface.TEXT_MODELS
     if image_path: models = [m for m in models if huggingface.is_vision_model(m)]
     if not models: models = ["Qwen/Qwen2.5-7B-Instruct-1M"]
@@ -176,7 +178,7 @@ def _ask_provider(prompt, settings, knowledge, image_path, provider):
     if configured: models = [configured] + [m for m in models if m != configured]
     discovered = huggingface.discover_models(token, bool(image_path))
     models += [m for m in discovered if m not in models]
-    seen = set(); attempted = False
+    seen = set(); attempted = False; errors = []
     for model in [m for m in models if m and not (m in seen or seen.add(m))]:
         key = _health_key("huggingface", model, token)
         if not _available(key): continue
@@ -186,20 +188,26 @@ def _ask_provider(prompt, settings, knowledge, image_path, provider):
             if not reply: raise RuntimeError("Hugging Face returned an empty response")
             _mark_success(key); learn_online_response(prompt, reply, settings); return reply
         except Exception as e:
-            _mark_failure(key, e); print("ONLINE AI HUGGING FACE FAILED:", model, e)
-    if not attempted:
-        raise RuntimeError("Hugging Face models are temporarily cooling down after previous failures")
-    raise RuntimeError("Hugging Face request failed for all available models")
+            _mark_failure(key, e); errors.append(f"{model}: {str(e)[:300]}"); print("ONLINE AI HUGGING FACE FAILED:", model, e)
+    detail = "; ".join(errors) if errors else "all available models are cooling down after previous failures"
+    raise RuntimeError(f"Hugging Face request failed: {detail}")
 
 
-def ask_online(prompt, settings=None, knowledge="", image_path=None):
+def ask_online_with_error(prompt, settings=None, knowledge="", image_path=None):
+    """Return the online response plus a safe diagnostic when the provider fails."""
     settings = settings or {}; _process_pending_feedback(settings)
     if not image_path and "[Attached Image:" in prompt:
         match = re.search(r"\[Attached Image:\s*([^\]]+)\]", prompt)
         if match: image_path = match.group(1).strip()
     selected = provider_name(settings)
     try:
-        return _ask_provider(prompt, settings, knowledge, image_path, selected)
+        return _ask_provider(prompt, settings, knowledge, image_path, selected), None
     except Exception as e:
-        print("ONLINE AI FAILED FOR SELECTED AI:", selected, e)
-        return None
+        message = str(e).strip() or f"{selected} provider failed without an error message"
+        print("ONLINE AI FAILED FOR SELECTED AI:", selected, message)
+        return None, message[:1000]
+
+
+def ask_online(prompt, settings=None, knowledge="", image_path=None):
+    reply, _error = ask_online_with_error(prompt, settings, knowledge, image_path)
+    return reply
