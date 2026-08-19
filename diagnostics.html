@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI Server Diagnostics</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#101014;color:#eee;font-family:Arial,sans-serif;padding:16px}.wrap{max-width:900px;margin:auto}.card{background:#181820;border:1px solid #333;border-radius:16px;padding:18px;margin-bottom:14px}.head{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap}.sub{color:#aaa}.overall{font-size:18px;font-weight:bold}.ok{color:#62e39b}.bad{color:#ff7272}.warn{color:#ffd166}.controls{display:flex;gap:10px;flex-wrap:wrap}button{border:0;border-radius:10px;padding:11px 15px;background:#ff5c9a;color:#fff;font-weight:bold;cursor:pointer}button.secondary{background:#444}.row{display:grid;grid-template-columns:70px 1fr auto;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid #2d2d35}.row:last-child{border-bottom:0}.badge{font-size:12px;font-weight:bold;padding:5px 8px;border-radius:8px;background:#30303a;text-align:center}.status{font-weight:bold}.detail{grid-column:2/-1;color:#aaa;font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere}.method{color:#aaa;font-size:12px}.time{color:#aaa;font-size:12px}input{background:#222;color:#fff;border:1px solid #555;border-radius:9px;padding:10px;width:100%;margin:8px 0}.note{font-size:13px;color:#aaa;line-height:1.5}.group{margin-top:20px}.group h3{margin-bottom:6px}
+</style>
+</head>
+<body><div class="wrap">
+<div class="card head"><div><h1>AI Server Diagnostics</h1><div class="sub">Live endpoint and frontend health check</div></div><div id="overall" class="overall">Not tested</div></div>
+<div class="card"><div class="controls"><button onclick="runAll()">Run All Tests</button><button class="secondary" onclick="location.reload()">Reload</button></div><input id="base" placeholder="Server URL (default: current page origin)"></div>
+<div class="card"><div id="results"><div class="sub">Press Run All Tests.</div></div></div>
+<div class="card"><div class="note"><b>Safe test policy:</b> this dashboard only performs GET/HEAD requests and intentionally avoids login, registration, password reset, chat creation, AI creation/deletion, message sending, uploads, and other mutating operations. A protected endpoint returning 401/403 is reported as <b>REACHABLE / AUTH REQUIRED</b>, not automatically treated as a server failure.</div></div>
+</div>
+<script>
+const tests=[
+ ['Core','GET','/api/health','Server health'],
+ ['Core','GET','/','Main web application'],
+ ['Core','GET','/login.html','Login page'],
+ ['Core','GET','/register.html','Registration page'],
+ ['Core','GET','/select_ai.html','AI selection page'],
+ ['Core','GET','/chats.html','Chats page'],
+ ['Core','GET','/ai_settings.html','AI settings page'],
+ ['Core','GET','/photo_library.html','Photo library page'],
+ ['Auth','GET','/api/auth/me','Current authentication session'],
+ ['User','GET','/api/user','User profile'],
+ ['AI','GET','/api/ais','AI list'],
+ ['AI','GET','/api/settings','AI settings API'],
+ ['Chats','GET','/api/chats','Chat list'],
+ ['Chats','GET','/api/chats/current','Current chat'],
+ ['Memory','GET','/api/memory','Memory API'],
+ ['Proactive','GET','/api/proactive','Proactive API'],
+ ['Media','GET','/api/profile_photo','Profile photo route'],
+ ['Media','GET','/api/ai_photo','AI photo route'],
+ ['Media','GET','/api/banner_photo','AI banner route'],
+ ['Static','GET','/js/api.js','Client API helper'],
+ ['Static','GET','/js/app.js','Main client application'],
+ ['Static','GET','/js/media.js','Media client code'],
+ ['Static','GET','/css/main.css','Main stylesheet']
+];
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function render(items){let groups={};for(const t of items)(groups[t[0]]??=[]).push(t);let html='';for(const [g,arr] of Object.entries(groups)){html+=`<div class="group"><h3>${esc(g)}</h3>`;for(const x of arr){html+=`<div class="row" id="r-${CSS.escape(x[2])}"><div class="badge">WAIT</div><div><b>${esc(x[3])}</b><div class="method">${x[1]} ${esc(x[2])}</div></div><div class="time">—</div><div class="detail">Waiting…</div></div>`}html+='</div>'}document.getElementById('results').innerHTML=html}
+async function test(t){const [group,method,path,label]=t;const row=document.getElementById('r-'+path);const badge=row.querySelector('.badge'),detail=row.querySelector('.detail'),time=row.querySelector('.time');const base=(document.getElementById('base').value.trim()||location.origin).replace(/\/$/,'');const started=performance.now();try{const r=await fetch(base+path,{method,credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json,text/html,*/*'}});const ms=Math.round(performance.now()-started);const text=await r.text();let extra='';try{const j=JSON.parse(text);extra=JSON.stringify(j).slice(0,500)}catch{extra=text.replace(/\s+/g,' ').slice(0,500)}let cls=r.ok?'ok':(r.status===401||r.status===403?'warn':'bad');badge.className='badge '+cls;badge.textContent=r.ok?'PASS':(r.status===401||r.status===403?'AUTH':'FAIL');time.textContent=ms+' ms';detail.textContent=`HTTP ${r.status} ${r.statusText}${extra?' — '+extra:''}`;return {ok:r.ok||r.status===401||r.status===403,hard:r.ok,auth:r.status===401||r.status===403}}catch(e){badge.className='badge bad';badge.textContent='ERR';time.textContent=Math.round(performance.now()-started)+' ms';detail.textContent=e.message;return {ok:false,hard:false,auth:false}}}
+async function runAll(){render(tests);document.getElementById('overall').textContent='Testing…';document.getElementById('overall').className='overall warn';let pass=0,fail=0,auth=0;for(const t of tests){const r=await test(t);if(r.hard)pass++;else if(r.auth)auth++;else fail++}const total=tests.length;document.getElementById('overall').textContent=`${pass}/${total} passed · ${auth} auth protected · ${fail} failed`;document.getElementById('overall').className='overall '+(fail?'bad':(auth?'warn':'ok'))}
+render(tests);
+</script></body></html>
