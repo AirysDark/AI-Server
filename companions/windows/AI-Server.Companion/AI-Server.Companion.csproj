@@ -7,9 +7,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>AI-Server.Companion</AssemblyName>
     <RootNamespace>AiServer.Companion</RootNamespace>
-    <ApplicationIcon>..\icon.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
-    <Resource Include="..\icon.png" />
+    <Resource Include="..\icon.png" Link="icon.png" />
   </ItemGroup>
 </Project>
