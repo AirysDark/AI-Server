@@ -32,7 +32,6 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    // PMX texture references are resolved relative to the PMX folder.
     model.loadTextures(pmxPath.parent_path().empty() ? std::filesystem::current_path().string() : pmxPath.parent_path().string());
 
     std::cout << "PMX loaded successfully.\n"
@@ -43,6 +42,19 @@ int main(int argc, char** argv)
               << "Textures:  " << model.textures().size() << "\n"
               << "Bones:     " << model.bones().size() << "\n"
               << "Morphs:    " << model.morphs().size() << "\n\n";
+
+    // Optional test hook: GeneRuntime.exe model.pmx "Morph Name" 1.0
+    if (argc >= 4) {
+        try {
+            const float value = std::stof(argv[3]);
+            if (!model.setMorphWeight(argv[2], value))
+                std::cerr << "WARNING: Morph not found: " << argv[2] << "\n";
+            else
+                std::cout << "Morph active: " << argv[2] << " = " << value << "\n";
+        } catch (const std::exception&) {
+            std::cerr << "WARNING: Invalid morph value: " << argv[3] << "\n";
+        }
+    }
 
     gene::AnimationPlayer player;
     player.add({"idle", 120, 30.0f});
