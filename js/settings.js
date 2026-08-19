@@ -1,12 +1,12 @@
 function updateTokenProviderUI(){
- const provider=$('aiTokenProviderInput')?.value||'huggingface';const openai=provider==='openai';
- const label=$('apiTokenLabel');if(label)label.innerText=openai?'OpenAI API Token':'Hugging Face API Token';
- const token=$('hfTokenInput');if(token)token.placeholder=openai?'Enter the OpenAI API token':'Leave blank to use the server default token';
- const other=$('otherApiSettings');if(other)other.style.display=openai?'block':'none';
- const link=$('tokenLink');if(link){link.href=openai?'https://platform.openai.com/api-keys':'https://huggingface.co/settings/tokens';link.innerText=openai?'Create an OpenAI API key':'Create a Hugging Face token'}
- const endpoint=$('apiEndpointInput');if(endpoint)endpoint.placeholder=openai?'https://api.openai.com/v1/chat/completions':'API endpoint';
- const model=$('apiModelInput');if(model)model.placeholder=openai?'gpt-4o-mini':'Model name';
- const compatibility=$('apiCompatibilityText');if(compatibility)compatibility.innerText=openai?'OpenAI API is supported through the server API adapter.':'Compatible with other AI APIs.';
+ const provider=$('aiTokenProviderInput')?.value||'huggingface';const openai=provider==='openai';const google=provider==='google';
+ const label=$('apiTokenLabel');if(label)label.innerText=google?'Google AI Studio API Key':openai?'OpenAI API Token':'Hugging Face API Token';
+ const token=$('hfTokenInput');if(token)token.placeholder=google?'Enter your Google AI Studio Gemini API key':openai?'Enter the OpenAI API token':'Leave blank to use the server default token';
+ const other=$('otherApiSettings');if(other)other.style.display=(openai||google)?'block':'none';
+ const link=$('tokenLink');if(link){link.href=google?'https://aistudio.google.com/app/apikey':openai?'https://platform.openai.com/api-keys':'https://huggingface.co/settings/tokens';link.innerText=google?'Create a Google AI Studio API key':openai?'Create an OpenAI API key':'Create a Hugging Face token'}
+ const endpoint=$('apiEndpointInput');if(endpoint)endpoint.placeholder=google?'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions':openai?'https://api.openai.com/v1/chat/completions':'API endpoint';
+ const model=$('apiModelInput');if(model)model.placeholder=google?'gemini-2.5-flash':openai?'gpt-4o-mini':'Model name';
+ const compatibility=$('apiCompatibilityText');if(compatibility)compatibility.innerText=google?'Google AI Studio Gemini API uses Google’s OpenAI-compatible endpoint.':openai?'OpenAI API is supported through the server API adapter.':'Compatible with other AI APIs.';
 }
 function setValue(id,value){const el=$(id);if(el)el.value=value??'';return el}
 function setChecked(id,value){const el=$(id);if(el)el.checked=!!value;return el}
