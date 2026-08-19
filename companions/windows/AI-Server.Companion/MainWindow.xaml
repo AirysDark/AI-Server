@@ -13,7 +13,6 @@
     <TextBlock x:Name="ConnectionText" Text="  • Offline" Foreground="#8F95A3" VerticalAlignment="Center" Margin="8,0,0,0"/>
     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"><Button Content="—" Width="34" Background="Transparent" Click="Minimize_Click"/><Button Content="×" Width="34" Background="Transparent" Click="Close_Click"/></StackPanel>
    </DockPanel>
-
    <Grid Grid.Row="1">
     <Grid x:Name="LoginView">
      <StackPanel VerticalAlignment="Center" MaxWidth="350">
@@ -27,11 +26,15 @@
       <TextBlock x:Name="LoginStatus" Foreground="#FFB36B" TextWrapping="Wrap" Margin="0,12,0,0"/>
      </StackPanel>
     </Grid>
-
     <Grid x:Name="MainView" Visibility="Collapsed">
      <Grid.RowDefinitions><RowDefinition Height="50"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
      <DockPanel Grid.Row="0">
-      <StackPanel Orientation="Horizontal"><Ellipse Width="38" Height="38" Fill="#ff4f9a"/><TextBlock x:Name="AiNameText" Text="AI" Foreground="White" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" Margin="10,0,0,0"/></StackPanel>
+      <StackPanel Orientation="Horizontal">
+       <Border Width="38" Height="38" CornerRadius="19" Clip="{Binding RelativeSource={RelativeSource Self}}" Background="#ff4f9a">
+        <Image x:Name="AiPhotoImage" Stretch="UniformToFill"/>
+       </Border>
+       <TextBlock x:Name="AiNameText" Text="AI" Foreground="White" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" Margin="10,0,0,0"/>
+      </StackPanel>
       <ComboBox x:Name="AiSelector" Width="150" Height="34" HorizontalAlignment="Right" SelectionChanged="AiSelector_SelectionChanged" DisplayMemberPath="AiName"/>
      </DockPanel>
      <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,4,0,8"><TextBlock x:Name="ChatText" Foreground="#E9EAF0" TextWrapping="Wrap" FontSize="15"/></ScrollViewer>
@@ -40,6 +43,6 @@
    </Grid>
   </Grid>
  </Border>
- <Button x:Name="FloatingButton" Width="64" Height="64" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-1,-72,0,0" Visibility="Collapsed" Background="#ff4f9a" Click="FloatingButton_Click"><TextBlock Text="AI" FontWeight="Bold" Foreground="White"/></Button>
+ <Button x:Name="FloatingButton" Width="64" Height="64" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-1,-72,0,0" Visibility="Collapsed" Background="#ff4f9a" Click="FloatingButton_Click"><Border Width="56" Height="56" CornerRadius="28" Background="#ff4f9a"><Image x:Name="FloatingPhotoImage" Stretch="UniformToFill"/></Border></Button>
 </Grid>
 </Window>
