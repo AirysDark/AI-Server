@@ -1,5 +1,18 @@
 let account=null,lastActivity=Date.now(),timer=null;
 
+function readLastConversationId(){
+ try{
+  const saved=JSON.parse(localStorage.getItem('lastConversation')||'null');
+  if(saved&&saved.conversation_id)return String(saved.conversation_id);
+ }catch(e){}
+ try{
+  const legacy=localStorage.getItem('lastConversationId');
+  if(legacy)return String(legacy);
+ }catch(e){}
+ const cookie=document.cookie.split(';').map(x=>x.trim()).find(x=>x.startsWith('AI_chat='));
+ return cookie?decodeURIComponent(cookie.slice('AI_chat='.length)):'';
+}
+
 async function boot(){
  try{
   const me=await (await fetch('/api/auth/me',{credentials:'same-origin',cache:'no-store'})).json();
@@ -11,12 +24,18 @@ async function boot(){
   fillSettings(s);
   const params=new URLSearchParams(location.search);
   const chatId=params.get('chat');
-  if(chatId){try{localStorage.setItem('lastConversation',JSON.stringify({conversation_id:String(chatId),ai_id:s.ai_id||''}))}catch(e){};await loadSelectedChat(chatId)}
-  else{
-   let lastChat=null;
-   try{const saved=JSON.parse(localStorage.getItem('lastConversation')||'null');if(saved&&saved.conversation_id&&(!saved.ai_id||saved.ai_id===s.ai_id))lastChat=saved.conversation_id}catch(e){}
+  if(chatId){
+   try{localStorage.setItem('lastConversation',JSON.stringify({conversation_id:String(chatId),ai_id:s.ai_id||account.ai_id||''}));localStorage.setItem('lastConversationId',String(chatId))}catch(e){}
+   await loadSelectedChat(chatId);
+  }else{
+   const lastChat=readLastConversationId();
    if(lastChat){
-    try{await loadSelectedChat(lastChat)}catch(e){try{localStorage.removeItem('lastConversation')}catch(x){};await loadMemory()}
+    try{await loadSelectedChat(lastChat)}catch(e){
+     console.warn('Saved conversation could not be restored:',e);
+     try{localStorage.removeItem('lastConversation')}catch(x){}
+     try{localStorage.removeItem('lastConversationId')}catch(x){}
+     await loadMemory();
+    }
    }else await loadMemory();
   }
   startProactive();
@@ -41,7 +60,7 @@ async function loadSelectedChat(chatId){
  if(!chat)throw Error('Chat element not found');
  chat.innerHTML='';
  conversation.forEach(loadConversationEntry);
- try{localStorage.setItem('lastConversation',JSON.stringify({conversation_id:id,ai_id:account?.ai_id||''}))}catch(e){}
+ try{localStorage.setItem('lastConversation',JSON.stringify({conversation_id:id,ai_id:account?.ai_id||''}));localStorage.setItem('lastConversationId',id)}catch(e){}
  sessionStorage.setItem('selectedConversation',JSON.stringify({conversation_id:id,data:{conversation:conversation}}));
 }
 
