@@ -39,7 +39,8 @@ class MaterialBatch:
         self.program=program;self.material=rgba(field(material,"diffuse_color","diffuse",default=(1,1,1,1)));self.material[3]=float(field(material,"alpha",default=self.material[3]));p=[];n=[];u=[]
         for i in indices:
             v=vertices[i];p.extend(field(v,"position",default=(0,0,0)));n.extend(field(v,"normal",default=(0,1,0)));u.extend(field(v,"uv",default=(0,0)))
-        self.vlist=program.vertex_list(len(indices),position=("f",p),normal=("f",n),uv=("f",u),diffuse=("f",[1]*len(indices)*4));self.texture=None
+        # pyglet ShaderProgram.vertex_list requires an explicit primitive mode.
+        self.vlist=program.vertex_list(len(indices),gl.GL_TRIANGLES,position=("f",p),normal=("f",n),uv=("f",u),diffuse=("f",[1]*len(indices)*4));self.texture=None
         if texture_path and texture_path.exists():
             try:
                 im=Image.open(texture_path).convert("RGBA").transpose(Image.Transpose.FLIP_TOP_BOTTOM);d=pyglet.image.ImageData(im.width,im.height,"RGBA",im.tobytes(),pitch=im.width*4);self.texture=d.get_texture()
