@@ -7,7 +7,7 @@
 
 int main(int argc, char** argv) {
     std::cout << "========================================\n"
-              << " Gené Runtime - VS2022\n"
+              << " Gene Runtime - VS2022\n"
               << "========================================\n\n";
 
     gene::Model model;
@@ -20,13 +20,14 @@ int main(int argc, char** argv) {
             return 1;
         }
         std::cout << "PMX loaded successfully.\n";
+        std::cout << "Version:  " << model.pmxVersion() << "\n";
         std::cout << "Vertices: " << model.vertexCount() << "\n";
         std::cout << "Indices:  " << model.indexCount() << "\n";
         std::cout << "Materials:" << model.materialCount() << "\n";
-        std::cout << "Bones:    " << model.boneCount() << "\n";
-        std::cout << "Morphs:   " << model.morphCount() << "\n\n";
+        std::cout << "Bones:    " << model.bones().size() << "\n";
+        std::cout << "Morphs:   " << model.morphs().size() << "\n\n";
     } else {
-        std::cout << "No PMX supplied. Starting empty Gené runtime.\n\n";
+        std::cout << "No PMX supplied. Starting empty Gene runtime.\n\n";
     }
 
     gene::AnimationPlayer player;
@@ -37,12 +38,12 @@ int main(int argc, char** argv) {
 
     gene::Renderer renderer;
     if (!renderer.initialize(1280, 720)) {
-        std::cerr << "Failed to create Gené window.\n";
+        std::cerr << "Failed to create Gene window.\n";
         std::cout << "Press Enter to close...\n";
         std::cin.get();
         return 1;
     }
-    renderer.setWindowTitle("Gené Runtime");
+    renderer.setWindowTitle("Gene Runtime");
 
     auto previous = std::chrono::steady_clock::now();
     while (renderer.running()) {
