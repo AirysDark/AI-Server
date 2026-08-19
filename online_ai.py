@@ -129,6 +129,8 @@ def ask_online(prompt, settings=None, knowledge="", image_path=None):
     if provider in ("openai", "google"):
         if provider == "google":
             configured_model = str(settings.get("api_model") or "").strip()
+            if configured_model in ("gemini-2.5-flash", "gemini-flash-latest"):
+                configured_model = google.TEXT_MODELS[0]
             models = []
             if configured_model:
                 models.append(configured_model)
