@@ -3,12 +3,24 @@
 Multi-chat is deliberately separate from normal C-*.json conversations.
 All room data is stored under each user's persistent AI-Server-Storage tree.
 """
-import json, os, re, time, uuid
+import copy, json, os, re, time, uuid
+from concurrent.futures import ThreadPoolExecutor
+from threading import Lock
 from core.ai_manager import list_ais, load_settings, ai_root
 from core.auth import current_user
 from core.config import USERS_DIR, MAX_AIS_PER_ACCOUNT
 from core.storage import load_json, save_json
 from core.server_impl import ask_online, think, clean_reply, features, ai_profile
+
+_ROOM_LOCKS = {}
+_ROOM_LOCKS_GUARD = Lock()
+_AI_EXECUTOR = ThreadPoolExecutor(max_workers=8)
+
+
+def _room_lock(uid, cid):
+    key = f"{uid}:{cid}"
+    with _ROOM_LOCKS_GUARD:
+        return _ROOM_LOCKS.setdefault(key, Lock())
 
 
 def _safe(value, prefix=None):
@@ -88,6 +100,7 @@ def _load(uid, cid):
         return None
     room.setdefault("conversation", [])
     room.setdefault("ais", [])
+    room.setdefault("pending_ai", [])
     return room
 
 
@@ -110,6 +123,7 @@ def new_room(uid):
         "title": "New conversation",
         "ais": selected,
         "conversation": [],
+        "pending_ai": [],
         "created": now,
         "updated": now,
     }
@@ -119,34 +133,43 @@ def new_room(uid):
 
 
 def rename_room(uid, cid, title):
-    room = _load(uid, cid)
-    title = " ".join(str(title or "").strip().split())[:80]
-    if not room or not title:
-        return False
-    room["title"] = title
-    room["updated"] = time.time()
-    save_json(_path(uid, room["conversation_id"]), room)
+    lock = _room_lock(uid, cid)
+    with lock:
+        room = _load(uid, cid)
+        title = " ".join(str(title or "").strip().split())[:80]
+        if not room or not title:
+            return False
+        room["title"] = title
+        room["updated"] = time.time()
+        save_json(_path(uid, room["conversation_id"]), room)
     _list(uid)
     return True
 
 
 def delete_room(uid, cid):
-    room = _load(uid, cid)
-    if not room:
-        return False
-    os.remove(_path(uid, room["conversation_id"]))
+    lock = _room_lock(uid, cid)
+    with lock:
+        room = _load(uid, cid)
+        if not room:
+            return False
+        try:
+            os.remove(_path(uid, room["conversation_id"]))
+        except FileNotFoundError:
+            return False
     _list(uid)
     return True
 
 
 def set_participants(uid, cid, ids):
-    room = _load(uid, cid)
-    valid = _valid_ai_ids(uid, ids)
-    if not room or not valid:
-        return None
-    room["ais"] = valid
-    room["updated"] = time.time()
-    save_json(_path(uid, room["conversation_id"]), room)
+    lock = _room_lock(uid, cid)
+    with lock:
+        room = _load(uid, cid)
+        valid = _valid_ai_ids(uid, ids)
+        if not room or not valid:
+            return None
+        room["ais"] = valid
+        room["updated"] = time.time()
+        save_json(_path(uid, room["conversation_id"]), room)
     _list(uid)
     return room
 
@@ -179,51 +202,102 @@ def _reply(uid, ai_id, room, prompt):
     return reply or "I couldn't get an AI response right now."
 
 
-def send_message(uid, cid, text):
-    room = _load(uid, cid)
-    text = str(text or "").strip()
-    if not room or not text:
-        return None
-    if not room.get("ais"):
-        return None
-    now = time.time()
-    room["conversation"].append({"type": "user", "text": text, "time": now})
-    responses = []
-    for ai_id in list(room["ais"]):
+def _finish_ai(uid, cid, ai_id, prompt, snapshot, mode=None):
+    """Run one AI independently and publish its response as soon as it finishes."""
+    try:
+        reply = _reply(uid, ai_id, snapshot, prompt)
         ai = next((x for x in list_ais(uid) if x["ai_id"] == ai_id), None)
         if not ai:
-            continue
-        reply = _reply(uid, ai_id, room, text)
-        entry = {"type": "ai", "ai_id": ai_id, "ai_name": ai["ai_name"], "text": reply, "time": time.time()}
-        room["conversation"].append(entry)
-        responses.append(entry)
-    room["updated"] = time.time()
-    if room.get("title") == "New conversation":
-        room["title"] = _room_title(room)
-    save_json(_path(uid, room["conversation_id"]), room)
+            return
+        entry = {
+            "type": "ai",
+            "ai_id": ai_id,
+            "ai_name": ai["ai_name"],
+            "text": reply,
+            "time": time.time(),
+        }
+        if mode:
+            entry["mode"] = mode
+        lock = _room_lock(uid, cid)
+        with lock:
+            room = _load(uid, cid)
+            if not room:
+                return
+            room["conversation"].append(entry)
+            pending = [x for x in room.get("pending_ai", []) if x != ai_id]
+            room["pending_ai"] = pending
+            room["updated"] = time.time()
+            if room.get("title") == "New conversation":
+                room["title"] = _room_title(room)
+            save_json(_path(uid, cid), room)
+        _list(uid)
+    except Exception:
+        lock = _room_lock(uid, cid)
+        with lock:
+            room = _load(uid, cid)
+            if room:
+                room["pending_ai"] = [x for x in room.get("pending_ai", []) if x != ai_id]
+                room["updated"] = time.time()
+                save_json(_path(uid, cid), room)
+
+
+def send_message(uid, cid, text):
+    lock = _room_lock(uid, cid)
+    with lock:
+        room = _load(uid, cid)
+        text = str(text or "").strip()
+        if not room or not text or not room.get("ais"):
+            return None
+        now = time.time()
+        ai_ids = list(room["ais"])
+        room["conversation"].append({"type": "user", "text": text, "time": now})
+        room["pending_ai"] = list(dict.fromkeys(room.get("pending_ai", []) + ai_ids))
+        room["updated"] = now
+        if room.get("title") == "New conversation":
+            room["title"] = _room_title(room)
+        snapshot = copy.deepcopy(room)
+        save_json(_path(uid, room["conversation_id"]), room)
     _list(uid)
-    return {"room": room, "responses": responses}
+    for ai_id in ai_ids:
+        _AI_EXECUTOR.submit(_finish_ai, uid, cid, ai_id, text, snapshot)
+    return {"room": room, "responses": []}
 
 
 def ai_talk(uid, cid):
-    room = _load(uid, cid)
-    if not room or not room.get("ais"):
-        return None
-    last = "Continue the discussion with the other AIs. Add something useful, interesting, or relevant to the conversation."
-    responses = []
-    for ai_id in list(room["ais"]):
-        ai = next((x for x in list_ais(uid) if x["ai_id"] == ai_id), None)
-        if not ai:
-            continue
-        reply = _reply(uid, ai_id, room, last)
-        entry = {"type": "ai", "ai_id": ai_id, "ai_name": ai["ai_name"], "text": reply, "time": time.time(), "mode": "ai_to_ai"}
-        room["conversation"].append(entry)
-        responses.append(entry)
-        last = "React to what the other participants just said:\n" + reply
-    room["updated"] = time.time()
-    save_json(_path(uid, room["conversation_id"]), room)
+    """Start an AI-to-AI round in the background so each completed response appears live."""
+    lock = _room_lock(uid, cid)
+    with lock:
+        room = _load(uid, cid)
+        if not room or not room.get("ais"):
+            return None
+        ai_ids = list(room["ais"])
+        pending = list(dict.fromkeys(room.get("pending_ai", []) + ai_ids))
+        room["pending_ai"] = pending
+        room["updated"] = time.time()
+        save_json(_path(uid, cid), room)
+        snapshot = copy.deepcopy(room)
     _list(uid)
-    return {"room": room, "responses": responses}
+
+    def round_table():
+        last = "Continue the discussion with the other AIs. Add something useful, interesting, or relevant to the conversation."
+        for ai_id in ai_ids:
+            lock2 = _room_lock(uid, cid)
+            with lock2:
+                current = _load(uid, cid)
+                if not current:
+                    return
+                context_room = copy.deepcopy(current)
+            _finish_ai(uid, cid, ai_id, last, context_room, "ai_to_ai")
+            lock3 = _room_lock(uid, cid)
+            with lock3:
+                current = _load(uid, cid)
+                if not current or not current.get("conversation"):
+                    return
+                latest = current["conversation"][-1]
+                last = "React to what the other participants just said:\n" + str(latest.get("text", ""))
+
+    _AI_EXECUTOR.submit(round_table)
+    return {"room": room, "responses": []}
 
 
 def _json_body(handler):
