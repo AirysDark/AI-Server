@@ -5,6 +5,49 @@
 #include "gene_model.h"
 #include "texture.h"
 
+#ifdef _WIN32
+#include <windows.h>
+
+// Win32 BitBlt has a fixed 9-argument signature. The renderer previously
+// contained one legacy call with two extra width/height arguments. Keep the
+// public Win32 API untouched and normalize both forms here so the project
+// remains buildable while the renderer source is updated independently.
+namespace gene_win32_compat {
+inline BOOL BitBlt9(HDC hdc, int x, int y, int cx, int cy,
+                    HDC src, int sx, int sy, DWORD rop)
+{
+    return ::BitBlt(hdc, x, y, cx, cy, src, sx, sy, rop);
+}
+
+inline BOOL BitBlt11(HDC hdc, int x, int y, int cx, int cy,
+                     HDC src, int sx, int sy, int /*sourceWidth*/,
+                     int /*sourceHeight*/, DWORD rop)
+{
+    return ::BitBlt(hdc, x, y, cx, cy, src, sx, sy, rop);
+}
+}
+
+// Accept the existing 9-argument and legacy 11-argument renderer calls.
+// The overloads above are declared before the macro, so ::BitBlt remains the
+// real Win32 function inside them.
+#define GENE_BITBLT_DISPATCH(...) gene_win32_compat::BitBltDispatch(__VA_ARGS__)
+namespace gene_win32_compat {
+inline BOOL BitBltDispatch(HDC hdc, int x, int y, int cx, int cy,
+                           HDC src, int sx, int sy, DWORD rop)
+{
+    return BitBlt9(hdc, x, y, cx, cy, src, sx, sy, rop);
+}
+inline BOOL BitBltDispatch(HDC hdc, int x, int y, int cx, int cy,
+                           HDC src, int sx, int sy, int sourceWidth,
+                           int sourceHeight, DWORD rop)
+{
+    return BitBlt11(hdc, x, y, cx, cy, src, sx, sy,
+                    sourceWidth, sourceHeight, rop);
+}
+}
+#define BitBlt(...) GENE_BITBLT_DISPATCH(__VA_ARGS__)
+#endif
+
 namespace gene {
 class Renderer {
 public:
