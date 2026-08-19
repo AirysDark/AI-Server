@@ -12,6 +12,12 @@ function readLastConversationId(){
  const cookie=document.cookie.split(';').map(x=>x.trim()).find(x=>x.startsWith('AI_chat='));
  return cookie?decodeURIComponent(cookie.slice('AI_chat='.length)):'';
 }
+function setSelectedConversation(id){
+ const value=String(id||'').trim();
+ if(!value)return;
+ document.cookie='AI_chat='+encodeURIComponent(value)+'; Path=/; SameSite=Lax; Max-Age=31536000';
+ try{localStorage.setItem('lastConversation',JSON.stringify({conversation_id:value,ai_id:account?.ai_id||''}));localStorage.setItem('lastConversationId',value)}catch(e){}
+}
 
 async function boot(){
  try{
@@ -25,7 +31,7 @@ async function boot(){
   const params=new URLSearchParams(location.search);
   const chatId=params.get('chat');
   if(chatId){
-   try{localStorage.setItem('lastConversation',JSON.stringify({conversation_id:String(chatId),ai_id:s.ai_id||account.ai_id||''}));localStorage.setItem('lastConversationId',String(chatId))}catch(e){}
+   setSelectedConversation(chatId);
    await loadSelectedChat(chatId);
   }else{
    const lastChat=readLastConversationId();
@@ -60,7 +66,7 @@ async function loadSelectedChat(chatId){
  if(!chat)throw Error('Chat element not found');
  chat.innerHTML='';
  conversation.forEach(loadConversationEntry);
- try{localStorage.setItem('lastConversation',JSON.stringify({conversation_id:id,ai_id:account?.ai_id||''}));localStorage.setItem('lastConversationId',id)}catch(e){}
+ setSelectedConversation(id);
  sessionStorage.setItem('selectedConversation',JSON.stringify({conversation_id:id,data:{conversation:conversation}}));
 }
 
