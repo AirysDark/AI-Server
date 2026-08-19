@@ -1,343 +1,105 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#include <algorithm>
+#include <cmath>
+#include <filesystem>
+#include <limits>
 #include <string>
 #include <vector>
 #include "renderer.h"
 
 namespace gene {
-
 static LRESULT CALLBACK GeneWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     Renderer* renderer = reinterpret_cast<Renderer*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
-
-    switch (msg)
-    {
-    case WM_CLOSE:
-        if (renderer != nullptr)
-            renderer->shutdown();
-        else
-            DestroyWindow(hwnd);
-        return 0;
-
+    switch (msg) {
+    case WM_CLOSE: if (renderer) renderer->shutdown(); else DestroyWindow(hwnd); return 0;
     case WM_PAINT:
-        if (renderer != nullptr)
-            renderer->paint();
-        else
-        {
-            PAINTSTRUCT ps = {};
-            BeginPaint(hwnd, &ps);
-            EndPaint(hwnd, &ps);
-        }
+        if (renderer) renderer->paint();
+        else { PAINTSTRUCT ps{}; BeginPaint(hwnd,&ps); EndPaint(hwnd,&ps); }
         return 0;
-
-    case WM_ERASEBKGND:
-        // The renderer owns the complete client area through its back buffer.
-        return 1;
-
-    case WM_DESTROY:
-        PostQuitMessage(0);
-        return 0;
-
-    default:
-        return DefWindowProcW(hwnd, msg, wParam, lParam);
+    case WM_ERASEBKGND: return 1;
+    case WM_SIZE: return 0;
+    case WM_DESTROY: PostQuitMessage(0); return 0;
+    default: return DefWindowProcW(hwnd,msg,wParam,lParam);
     }
 }
 
 void Renderer::destroyBackBuffer()
 {
-    HDC dc = static_cast<HDC>(_backBufferDC);
-    HBITMAP bitmap = static_cast<HBITMAP>(_backBufferBitmap);
-    HBITMAP oldBitmap = static_cast<HBITMAP>(_backBufferOldBitmap);
-
-    if (dc != nullptr)
-    {
-        if (oldBitmap != nullptr)
-            SelectObject(dc, oldBitmap);
-        DeleteDC(dc);
-    }
-
-    if (bitmap != nullptr)
-        DeleteObject(bitmap);
-
-    _backBufferDC = nullptr;
-    _backBufferBitmap = nullptr;
-    _backBufferOldBitmap = nullptr;
-    _bufferWidth = 0;
-    _bufferHeight = 0;
+    HDC dc=static_cast<HDC>(_backBufferDC);
+    HBITMAP bitmap=static_cast<HBITMAP>(_backBufferBitmap);
+    HBITMAP oldBitmap=static_cast<HBITMAP>(_backBufferOldBitmap);
+    if(dc){if(oldBitmap)SelectObject(dc,oldBitmap);DeleteDC(dc);} if(bitmap)DeleteObject(bitmap);
+    _backBufferDC=nullptr;_backBufferBitmap=nullptr;_backBufferOldBitmap=nullptr;_backBufferPixels=nullptr;
+    _bufferWidth=0;_bufferHeight=0;_zBuffer.clear();
 }
 
-bool Renderer::ensureBackBuffer(int width, int height)
+bool Renderer::ensureBackBuffer(int width,int height)
 {
-    if (_window == nullptr || width <= 0 || height <= 0)
-        return false;
-
-    if (_backBufferDC != nullptr &&
-        _backBufferBitmap != nullptr &&
-        _bufferWidth == static_cast<uint32_t>(width) &&
-        _bufferHeight == static_cast<uint32_t>(height))
-        return true;
-
+    if(!_window||width<=0||height<=0)return false;
+    if(_backBufferDC&&_bufferWidth==uint32_t(width)&&_bufferHeight==uint32_t(height))return true;
     destroyBackBuffer();
-
-    HWND hwnd = static_cast<HWND>(_window);
-    HDC windowDC = GetDC(hwnd);
-    if (windowDC == nullptr)
-        return false;
-
-    HDC memoryDC = CreateCompatibleDC(windowDC);
-    HBITMAP bitmap = CreateCompatibleBitmap(windowDC, width, height);
-    ReleaseDC(hwnd, windowDC);
-
-    if (memoryDC == nullptr || bitmap == nullptr)
-    {
-        if (memoryDC != nullptr)
-            DeleteDC(memoryDC);
-        if (bitmap != nullptr)
-            DeleteObject(bitmap);
-        return false;
-    }
-
-    HBITMAP oldBitmap = static_cast<HBITMAP>(SelectObject(memoryDC, bitmap));
-
-    _backBufferDC = memoryDC;
-    _backBufferBitmap = bitmap;
-    _backBufferOldBitmap = oldBitmap;
-    _bufferWidth = static_cast<uint32_t>(width);
-    _bufferHeight = static_cast<uint32_t>(height);
-
-    RECT rect = { 0, 0, width, height };
-    FillRect(memoryDC, &rect, reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1));
-    return true;
+    HWND hwnd=static_cast<HWND>(_window); HDC windowDC=GetDC(hwnd); if(!windowDC)return false;
+    HDC memoryDC=CreateCompatibleDC(windowDC); if(!memoryDC){ReleaseDC(hwnd,windowDC);return false;}
+    BITMAPINFO bi{}; bi.bmiHeader.biSize=sizeof(BITMAPINFOHEADER); bi.bmiHeader.biWidth=width; bi.bmiHeader.biHeight=-height;
+    bi.bmiHeader.biPlanes=1; bi.bmiHeader.biBitCount=32; bi.bmiHeader.biCompression=BI_RGB;
+    void* pixels=nullptr; HBITMAP bitmap=CreateDIBSection(windowDC,&bi,DIB_RGB_COLORS,&pixels,nullptr,0); ReleaseDC(hwnd,windowDC);
+    if(!bitmap||!pixels){if(bitmap)DeleteObject(bitmap);DeleteDC(memoryDC);return false;}
+    HBITMAP oldBitmap=static_cast<HBITMAP>(SelectObject(memoryDC,bitmap));
+    _backBufferDC=memoryDC;_backBufferBitmap=bitmap;_backBufferOldBitmap=oldBitmap;_backBufferPixels=pixels;
+    _bufferWidth=uint32_t(width);_bufferHeight=uint32_t(height); return true;
 }
 
-bool Renderer::initialize(uint32_t width, uint32_t height)
+bool Renderer::initialize(uint32_t width,uint32_t height)
 {
-    _width = width;
-    _height = height;
-
-    HINSTANCE instance = GetModuleHandleW(nullptr);
-    const wchar_t* className = L"GeneRuntimeWindow";
-
-    WNDCLASSW wc = {};
-    wc.lpfnWndProc = GeneWndProc;
-    wc.hInstance = instance;
-    wc.lpszClassName = className;
-    wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-    wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
-    RegisterClassW(&wc);
-
-    RECT rect = { 0, 0, static_cast<LONG>(_width), static_cast<LONG>(_height) };
-    AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
-
-    HWND hwnd = CreateWindowExW(
-        0,
-        className,
-        L"Gene Runtime",
-        WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT,
-        CW_USEDEFAULT,
-        rect.right - rect.left,
-        rect.bottom - rect.top,
-        nullptr,
-        nullptr,
-        instance,
-        nullptr);
-
-    if (hwnd == nullptr)
-        return false;
-
-    _window = hwnd;
-    _running = true;
-    SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
-
-    RECT client = {};
-    GetClientRect(hwnd, &client);
-    ensureBackBuffer(client.right - client.left, client.bottom - client.top);
-
-    ShowWindow(hwnd, SW_SHOW);
-    UpdateWindow(hwnd);
-    return true;
+    _width=width;_height=height; HINSTANCE instance=GetModuleHandleW(nullptr); const wchar_t* className=L"GeneRuntimeWindow";
+    WNDCLASSW wc{};wc.lpfnWndProc=GeneWndProc;wc.hInstance=instance;wc.lpszClassName=className;wc.hCursor=LoadCursorW(nullptr,IDC_ARROW);wc.hbrBackground=nullptr;RegisterClassW(&wc);
+    RECT rect{0,0,(LONG)_width,(LONG)_height};AdjustWindowRect(&rect,WS_OVERLAPPEDWINDOW,FALSE);
+    HWND hwnd=CreateWindowExW(0,className,L"Gene Runtime",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,rect.right-rect.left,rect.bottom-rect.top,nullptr,nullptr,instance,nullptr);
+    if(!hwnd)return false;_window=hwnd;_running=true;SetWindowLongPtrW(hwnd,GWLP_USERDATA,reinterpret_cast<LONG_PTR>(this));
+    RECT client{};GetClientRect(hwnd,&client);if(!ensureBackBuffer(client.right-client.left,client.bottom-client.top)){DestroyWindow(hwnd);_window=nullptr;_running=false;return false;}
+    ShowWindow(hwnd,SW_SHOW);UpdateWindow(hwnd);return true;
 }
 
-void Renderer::pollEvents()
+void Renderer::pollEvents(){MSG msg{};while(PeekMessageW(&msg,nullptr,0,0,PM_REMOVE)){if(msg.message==WM_QUIT)_running=false;else{TranslateMessage(&msg);DispatchMessageW(&msg);}}}
+bool Renderer::running()const{return _running;}
+void Renderer::clearBackBuffer(uint32_t color){if(!_backBufferPixels)return;auto* dst=static_cast<uint32_t*>(_backBufferPixels);std::fill(dst,dst+size_t(_bufferWidth)*_bufferHeight,color);}
+static inline float edge(float ax,float ay,float bx,float by,float px,float py){return(px-ax)*(by-ay)-(py-ay)*(bx-ax);}
+
+void Renderer::drawTexturedTriangle(const Vertex&a,const Vertex&b,const Vertex&c,const TextureInfo*texture,float zBias)
 {
-    MSG msg = {};
-    while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE))
-    {
-        if (msg.message == WM_QUIT)
-            _running = false;
-        else
-        {
-            TranslateMessage(&msg);
-            DispatchMessageW(&msg);
-        }
-    }
+    struct P{float x,y,z,u,v;}p[3];const float scale=_modelScale,cx=float(_bufferWidth)*0.5f,cy=float(_bufferHeight)*0.54f;
+    auto project=[&](const Vertex&v){P q{};q.x=cx+(v.position.x-_modelCenterX)*scale;q.y=cy-(v.position.y-_modelCenterY)*scale;q.z=(v.position.z-_modelCenterZ)+zBias;q.u=v.uv.x;q.v=1.0f-v.uv.y;return q;};
+    p[0]=project(a);p[1]=project(b);p[2]=project(c);float area=edge(p[0].x,p[0].y,p[1].x,p[1].y,p[2].x,p[2].y);if(std::fabs(area)<0.0001f)return;if(area<0){std::swap(p[1],p[2]);area=-area;}
+    int minX=std::max(0,(int)std::floor(std::min({p[0].x,p[1].x,p[2].x}))),maxX=std::min((int)_bufferWidth-1,(int)std::ceil(std::max({p[0].x,p[1].x,p[2].x})));
+    int minY=std::max(0,(int)std::floor(std::min({p[0].y,p[1].y,p[2].y}))),maxY=std::min((int)_bufferHeight-1,(int)std::ceil(std::max({p[0].y,p[1].y,p[2].y})));if(minX>maxX||minY>maxY)return;
+    auto*dst=static_cast<uint32_t*>(_backBufferPixels);bool textured=texture&&texture->loaded();const uint32_t flat=0xFFD8D8D8u;
+    for(int y=minY;y<=maxY;++y)for(int x=minX;x<=maxX;++x){float px=x+0.5f,py=y+0.5f;float w0=edge(p[1].x,p[1].y,p[2].x,p[2].y,px,py),w1=edge(p[2].x,p[2].y,p[0].x,p[0].y,px,py),w2=edge(p[0].x,p[0].y,p[1].x,p[1].y,px,py);if(w0<0||w1<0||w2<0)continue;w0/=area;w1/=area;w2/=area;float z=w0*p[0].z+w1*p[1].z+w2*p[2].z;size_t pos=size_t(y)*_bufferWidth+size_t(x);if(z>=_zBuffer[pos])continue;_zBuffer[pos]=z;uint32_t src=flat;
+        if(textured){float u=w0*p[0].u+w1*p[1].u+w2*p[2].u,v=w0*p[0].v+w1*p[1].v+w2*p[2].v;u-=std::floor(u);v-=std::floor(v);uint32_t tx=std::min(texture->width-1,(uint32_t)std::max(0.0f,u*texture->width)),ty=std::min(texture->height-1,(uint32_t)std::max(0.0f,v*texture->height));const uint8_t*s=&texture->pixels[(size_t(ty)*texture->width+tx)*4];if(s[3]<8)continue;src=uint32_t(s[2])|(uint32_t(s[1])<<8)|(uint32_t(s[0])<<16)|0xFF000000u;if(s[3]<255){uint32_t d=dst[pos];unsigned a8=s[3],ia=255-a8;unsigned r=((src>>16)&255)*a8+((d>>16)&255)*ia,g=((src>>8)&255)*a8+((d>>8)&255)*ia,b=(src&255)*a8+(d&255)*ia;src=0xFF000000u|((r/255)<<16)|((g/255)<<8)|(b/255);}}
+        dst[pos]=src;}
 }
 
-bool Renderer::running() const
+void Renderer::loadModelTextures(const Model&model)
 {
-    return _running;
+    if(_texturesLoaded&&_textureRoot==model.textureDirectory())return;_textures.clear();_textureRoot=model.textureDirectory();_textures.resize(model.textures().size());
+    for(size_t i=0;i<model.textures().size();++i){std::filesystem::path rel(model.textures()[i]);std::filesystem::path path=rel.is_absolute()?rel:std::filesystem::path(_textureRoot)/rel;path=path.lexically_normal();if(!std::filesystem::exists(path)){auto fallback=std::filesystem::path(_textureRoot)/rel.filename();if(std::filesystem::exists(fallback))path=fallback;}TextureLoader loader;if(!loader.load(path.string(),_textures[i]))_textures[i].path=path.string();}
+    _texturesLoaded=true;
 }
 
-void Renderer::draw(const Model& model)
+void Renderer::draw(const Model&model)
 {
-    if (_window == nullptr)
-        return;
-
-    HWND hwnd = static_cast<HWND>(_window);
-    RECT client = {};
-    GetClientRect(hwnd, &client);
-
-    int clientWidth = client.right - client.left;
-    int clientHeight = client.bottom - client.top;
-    if (clientWidth <= 0 || clientHeight <= 0)
-        return;
-
-    if (!ensureBackBuffer(clientWidth, clientHeight))
-        return;
-
-    HDC dc = static_cast<HDC>(_backBufferDC);
-    FillRect(dc, &client, reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1));
-
-    const std::vector<Vertex>& vertices = model.vertices();
-    const std::vector<uint32_t>& indices = model.indices();
-
-    if (vertices.empty() || indices.size() < 3)
-    {
-        DrawTextW(dc, L"Gene Runtime\n\nNo renderable PMX geometry.", -1, &client,
-            DT_CENTER | DT_VCENTER | DT_NOPREFIX);
-        return;
-    }
-
-    float minX = vertices[0].position.x;
-    float maxX = minX;
-    float minY = vertices[0].position.y;
-    float maxY = minY;
-    float minZ = vertices[0].position.z;
-    float maxZ = minZ;
-
-    for (const Vertex& vertex : vertices)
-    {
-        if (vertex.position.x < minX) minX = vertex.position.x;
-        if (vertex.position.x > maxX) maxX = vertex.position.x;
-        if (vertex.position.y < minY) minY = vertex.position.y;
-        if (vertex.position.y > maxY) maxY = vertex.position.y;
-        if (vertex.position.z < minZ) minZ = vertex.position.z;
-        if (vertex.position.z > maxZ) maxZ = vertex.position.z;
-    }
-
-    float centerX = (minX + maxX) * 0.5f;
-    float centerY = (minY + maxY) * 0.5f;
-    float centerZ = (minZ + maxZ) * 0.5f;
-
-    float spanX = maxX - minX;
-    float spanY = maxY - minY;
-    float spanZ = maxZ - minZ;
-    float span = spanX;
-    if (spanY > span) span = spanY;
-    if (spanZ > span) span = spanZ;
-    if (span < 0.001f) span = 0.001f;
-
-    int windowSize = clientWidth < clientHeight ? clientWidth : clientHeight;
-    float scale = static_cast<float>(windowSize) * 0.78f / span;
-
-    std::vector<POINT> projected(vertices.size());
-    for (size_t i = 0; i < vertices.size(); ++i)
-    {
-        const Vec3& position = vertices[i].position;
-        float x = (position.x - centerX) * scale;
-        float y = (position.y - centerY) * scale;
-        float z = (position.z - centerZ) * scale;
-        projected[i].x = static_cast<LONG>(clientWidth * 0.5f + x - z * 0.35f);
-        projected[i].y = static_cast<LONG>(clientHeight * 0.5f - y - z * 0.20f);
-    }
-
-    HPEN pen = CreatePen(PS_SOLID, 1, RGB(60, 60, 60));
-    HGDIOBJ oldPen = SelectObject(dc, pen);
-
-    size_t triangleCount = indices.size() / 3;
-    size_t step = triangleCount > 30000 ? (triangleCount / 30000) + 1 : 1;
-
-    for (size_t triangle = 0; triangle < triangleCount; triangle += step)
-    {
-        uint32_t a = indices[triangle * 3];
-        uint32_t b = indices[triangle * 3 + 1];
-        uint32_t c = indices[triangle * 3 + 2];
-        if (a >= projected.size() || b >= projected.size() || c >= projected.size())
-            continue;
-
-        MoveToEx(dc, projected[a].x, projected[a].y, nullptr);
-        LineTo(dc, projected[b].x, projected[b].y);
-        LineTo(dc, projected[c].x, projected[c].y);
-        LineTo(dc, projected[a].x, projected[a].y);
-    }
-
-    SelectObject(dc, oldPen);
-    DeleteObject(pen);
-
-    SetBkMode(dc, TRANSPARENT);
-    DrawTextW(dc, L"Gene Runtime - PMX geometry", -1, &client,
-        DT_TOP | DT_CENTER | DT_NOPREFIX);
+    if(!_window)return;HWND hwnd=static_cast<HWND>(_window);RECT client{};GetClientRect(hwnd,&client);int width=client.right-client.left,height=client.bottom-client.top;if(width<=0||height<=0||!ensureBackBuffer(width,height))return;
+    clearBackBuffer(0xFFF2F2F2u);loadModelTextures(model);const auto&verts=model.vertices();const auto&idx=model.indices();if(verts.empty()||idx.size()<3){present();return;}
+    float minX=verts[0].position.x,maxX=minX,minY=verts[0].position.y,maxY=minY,minZ=verts[0].position.z,maxZ=minZ;for(const auto&v:verts){minX=std::min(minX,v.position.x);maxX=std::max(maxX,v.position.x);minY=std::min(minY,v.position.y);maxY=std::max(maxY,v.position.y);minZ=std::min(minZ,v.position.z);maxZ=std::max(maxZ,v.position.z);}
+    _modelCenterX=(minX+maxX)*0.5f;_modelCenterY=(minY+maxY)*0.5f;_modelCenterZ=(minZ+maxZ)*0.5f;float span=std::max({maxX-minX,maxY-minY,maxZ-minZ,0.001f});_modelScale=float(std::min(_bufferWidth,_bufferHeight))*0.78f/span;_zBuffer.assign(size_t(_bufferWidth)*_bufferHeight,std::numeric_limits<float>::infinity());
+    const auto&mats=model.materials();size_t offset=0;for(size_t mi=0;mi<mats.size()&&offset+2<idx.size();++mi){const Material&mat=mats[mi];size_t count=std::min<size_t>(mat.indexCount,idx.size()-offset);const TextureInfo*tex=nullptr;if(mat.textureIndex>=0&&size_t(mat.textureIndex)<_textures.size()&&_textures[mat.textureIndex].loaded())tex=&_textures[mat.textureIndex];for(size_t j=0;j+2<count;j+=3){uint32_t ia=idx[offset+j],ib=idx[offset+j+1],ic=idx[offset+j+2];if(ia<verts.size()&&ib<verts.size()&&ic<verts.size())drawTexturedTriangle(verts[ia],verts[ib],verts[ic],tex,float(mi)*0.0001f);}offset+=count;}
+    HDC dc=static_cast<HDC>(_backBufferDC);SetBkMode(dc,TRANSPARENT);SetTextColor(dc,RGB(30,30,30));RECT textRect{8,8,width-8,32};DrawTextW(dc,L"Gene Runtime - textured PMX",-1,&textRect,DT_LEFT|DT_NOPREFIX);present();
 }
 
-void Renderer::paint()
-{
-    HWND hwnd = static_cast<HWND>(_window);
-    if (hwnd == nullptr)
-        return;
-
-    PAINTSTRUCT ps = {};
-    HDC windowDC = BeginPaint(hwnd, &ps);
-
-    RECT client = {};
-    GetClientRect(hwnd, &client);
-    int width = client.right - client.left;
-    int height = client.bottom - client.top;
-
-    if (width > 0 && height > 0 && ensureBackBuffer(width, height))
-    {
-        HDC bufferDC = static_cast<HDC>(_backBufferDC);
-        BitBlt(windowDC, 0, 0, width, height, bufferDC, 0, 0, SRCCOPY);
-    }
-
-    EndPaint(hwnd, &ps);
-}
-
-void Renderer::present()
-{
-    if (_window != nullptr)
-    {
-        HWND hwnd = static_cast<HWND>(_window);
-        InvalidateRect(hwnd, nullptr, FALSE);
-        UpdateWindow(hwnd);
-    }
-}
-
-void Renderer::setWindowTitle(const std::string& title)
-{
-    if (_window == nullptr)
-        return;
-
-    int length = MultiByteToWideChar(CP_UTF8, 0, title.c_str(), -1, nullptr, 0);
-    if (length <= 0)
-        return;
-
-    std::wstring wide(static_cast<size_t>(length), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, title.c_str(), -1, wide.data(), length);
-    SetWindowTextW(static_cast<HWND>(_window), wide.c_str());
-}
-
-void Renderer::shutdown()
-{
-    HWND hwnd = static_cast<HWND>(_window);
-    _running = false;
-
-    destroyBackBuffer();
-    _window = nullptr;
-
-    if (hwnd != nullptr)
-        DestroyWindow(hwnd);
-}
-
+void Renderer::paint(){HWND hwnd=static_cast<HWND>(_window);if(!hwnd)return;PAINTSTRUCT ps{};HDC dc=BeginPaint(hwnd,&ps);RECT r{};GetClientRect(hwnd,&r);int w=r.right-r.left,h=r.bottom-r.top;if(dc&&w>0&&h>0&&ensureBackBuffer(w,h))BitBlt(dc,0,0,w,h,static_cast<HDC>(_backBufferDC),0,0,w,h,SRCCOPY);EndPaint(hwnd,&ps);}
+void Renderer::present(){if(_window)InvalidateRect(static_cast<HWND>(_window),nullptr,FALSE);}
+void Renderer::setWindowTitle(const std::string&title){if(!_window)return;int n=MultiByteToWideChar(CP_UTF8,0,title.c_str(),-1,nullptr,0);if(n<=0)return;std::wstring w(size_t(n),L'\0');MultiByteToWideChar(CP_UTF8,0,title.c_str(),-1,w.data(),n);SetWindowTextW(static_cast<HWND>(_window),w.c_str());}
+void Renderer::shutdown(){HWND hwnd=static_cast<HWND>(_window);_window=nullptr;_running=false;destroyBackBuffer();if(hwnd)DestroyWindow(hwnd);}
 }
