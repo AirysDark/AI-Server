@@ -4,10 +4,10 @@
 AnimationState animationStateFromName(const String& name) {
     if (name == "thinking") return AnimationState::Thinking;
     if (name == "talking") return AnimationState::Talking;
-    if (name == "happy") return AnimationState::Happy;
+    if (name == "happy" || name == "excited" || name == "greeting") return AnimationState::Happy;
     if (name == "sad") return AnimationState::Sad;
     if (name == "angry") return AnimationState::Angry;
-    if (name == "surprised") return AnimationState::Surprised;
+    if (name == "surprised" || name == "curious") return AnimationState::Surprised;
     if (name == "sleepy") return AnimationState::Sleepy;
     if (name == "offline") return AnimationState::Offline;
     return AnimationState::Idle;
@@ -16,7 +16,7 @@ AnimationState animationStateFromName(const String& name) {
 bool parseAnimationCommand(const String& json, AiAnimationCommand& command) {
     JsonDocument doc;
     if (deserializeJson(doc, json)) return false;
-    command.character = doc["character"] | "ai";
+    command.character = doc["character"] | "gene";
     command.animation = doc["animation"] | "idle";
     command.fps = doc["fps"] | 12;
     command.durationMs = doc["duration_ms"] | 0UL;
