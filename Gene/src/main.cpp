@@ -58,6 +58,11 @@ int main(int argc, char** argv)
         }
     }
 
+    // setMorphWeight() already applies the morph. Keep this explicit so future
+    // callers that modify several morph values before entering the render loop
+    // get the same deterministic update point as the MMD loading pipeline.
+    model.updateMorphs();
+
     gene::AnimationPlayer player;
     player.add({"idle", 120, 30.0f});
     player.add({"talking", 60, 30.0f});
