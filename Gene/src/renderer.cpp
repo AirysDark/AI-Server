@@ -174,12 +174,10 @@ void Renderer::drawTexturedTriangle(const Vertex& a, const Vertex& b, const Vert
     auto* dst = static_cast<uint32_t*>(_backBufferPixels);
     const bool textured = texture && texture->loaded() && texture->width > 0 && texture->height > 0;
 
-    // PMX diffuse alpha is the authoritative material transparency.  The old
-    // renderer treated every texture's RGBA alpha as transparency, which can
-    // turn perfectly opaque MMD materials into large holes when a texture uses
-    // its alpha channel as a mask/detail channel.  Only apply texture alpha to
-    // materials that are actually translucent in the PMX material data.
-    const bool materialTranslucent = material.diffuse[3] < 0.999f;
+    // MMD Tools computes final alpha as the minimum of material alpha and the
+    // alpha supplied by the base/toon/sphere textures. Its image loader also
+    // disables alpha for BMP files. TextureInfo::useAlpha reproduces that
+    // distinction so WIC's synthesized BMP alpha cannot punch holes in meshes.
     const uint8_t materialAlpha = uint8_t(std::clamp(material.diffuse[3] * 255.0f, 0.0f, 255.0f));
 
     for (int y=minY; y<=maxY; ++y) for (int x=minX; x<=maxX; ++x) {
@@ -198,17 +196,16 @@ void Renderer::drawTexturedTriangle(const Vertex& a, const Vertex& b, const Vert
 
         const float u=(w0*p[0].u*p[0].invDepth+w1*p[1].u*p[1].invDepth+w2*p[2].u*p[2].invDepth)/invDepth;
         const float v=(w0*p[0].v*p[0].invDepth+w1*p[1].v*p[1].invDepth+w2*p[2].v*p[2].invDepth)/invDepth;
-        uint8_t sr=220,sg=220,sb=220,sa=255;
+        uint8_t sr=220,sg=220,sb=220,textureAlpha=255;
         if (textured) {
             const float uu=u-std::floor(u), vv=v-std::floor(v);
             const uint32_t tx=std::min(texture->width-1,uint32_t(std::max(0.0f,uu*float(texture->width))));
             const uint32_t ty=std::min(texture->height-1,uint32_t(std::max(0.0f,vv*float(texture->height))));
             const uint8_t* s=&texture->pixels[(size_t(ty)*texture->width+tx)*4];
             sr=s[0]; sg=s[1]; sb=s[2];
-            sa = materialTranslucent ? uint8_t((uint16_t(s[3]) * uint16_t(materialAlpha) + 127u) / 255u) : 255u;
-        } else {
-            sa = materialAlpha;
+            textureAlpha=texture->useAlpha ? s[3] : 255u;
         }
+        const uint8_t sa=uint8_t((uint16_t(materialAlpha)*uint16_t(textureAlpha)+127u)/255u);
         if (sa<12) continue;
 
         const float nx=w0*p[0].nx+w1*p[1].nx+w2*p[2].nx;
@@ -302,7 +299,9 @@ void Renderer::draw(const Model& model)
         const TextureInfo* tex=nullptr;
         if (mat.textureIndex>=0&&size_t(mat.textureIndex)<_textures.size()&&_textures[mat.textureIndex].loaded()) tex=&_textures[mat.textureIndex];
         for (size_t j=0;j+2<count;j+=3) {
-            const uint32_t ia=idx[offset+j], ib=idx[offset+j+1], ic=idx[offset+j+2];
+            // PMX Tools reverses the triangle winding while converting into
+            // Blender's coordinate system. We do the same here for consistency.
+            const uint32_t ia=idx[offset+j+2], ib=idx[offset+j+1], ic=idx[offset+j];
             if (ia<skinned.size()&&ib<skinned.size()&&ic<skinned.size()) drawTexturedTriangle(skinned[ia],skinned[ib],skinned[ic],mat,tex);
         }
         offset+=count;
@@ -327,7 +326,7 @@ void Renderer::paint()
     RECT r{}; GetClientRect(hwnd,&r);
     const int w=r.right-r.left, h=r.bottom-r.top;
     if (dc&&w>0&&h>0&&ensureBackBuffer(w,h)) {
-        BitBlt(dc,0,0,w,h,static_cast<HDC>(_backBufferDC),0,0,SRCCOPY);
+        BitBlt(dc,0,0,w,h,static_cast<HDC>(_backBufferDC),0,0,w,h,SRCCOPY);
     }
     EndPaint(hwnd,&ps);
 }
@@ -339,7 +338,7 @@ void Renderer::present()
     HDC dc=GetDC(hwnd);
     if (dc) {
         const int w=int(_bufferWidth), h=int(_bufferHeight);
-        if (w>0&&h>0) BitBlt(dc,0,0,w,h,static_cast<HDC>(_backBufferDC),0,0,SRCCOPY);
+        if (w>0&&h>0) BitBlt(dc,0,0,w,h,static_cast<HDC>(_backBufferDC),0,0,w,h,SRCCOPY);
         ReleaseDC(hwnd,dc);
     }
 }
