@@ -22,8 +22,19 @@ public partial class MainWindow : Window
     private async void Window_Loaded(object sender, RoutedEventArgs e)
     {
         PositionWindow();
-        if (await _client.ConnectAsync()) await ShowMainAsync();
-        else ShowLogin("Sign in to your AI Server account.");
+        ShowLogin("Sign in to your AI Server account.");
+
+        // Connect in the background, but NEVER force the login screen to change.
+        // The user decides when to enter the main companion screen by logging in.
+        try
+        {
+            await _client.ConnectAsync();
+            ConnectionText.Text = "  • Server online";
+        }
+        catch
+        {
+            ConnectionText.Text = "  • Offline";
+        }
     }
 
     private void PositionWindow()
@@ -40,7 +51,13 @@ public partial class MainWindow : Window
 
     private async void Login_Click(object sender, RoutedEventArgs e)
     {
-        try { SetAuthEnabled(false); LoginStatus.Text = "Signing in…"; await _client.LoginAsync(EmailBox.Text.Trim(), PasswordBox.Password); await ShowMainAsync(); }
+        try
+        {
+            SetAuthEnabled(false);
+            LoginStatus.Text = "Signing in…";
+            await _client.LoginAsync(EmailBox.Text.Trim(), PasswordBox.Password);
+            await ShowMainAsync();
+        }
         catch (Exception ex) { LoginStatus.Text = ex.Message; }
         finally { SetAuthEnabled(true); }
     }
@@ -49,8 +66,14 @@ public partial class MainWindow : Window
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(UsernameBox.Text)) { LoginStatus.Text = "Enter a username to register."; return; }
-            SetAuthEnabled(false); LoginStatus.Text = "Creating account…";
+            if (string.IsNullOrWhiteSpace(UsernameBox.Text))
+            {
+                LoginStatus.Text = "Enter a username to register.";
+                return;
+            }
+
+            SetAuthEnabled(false);
+            LoginStatus.Text = "Creating account…";
             await _client.RegisterAsync(EmailBox.Text.Trim(), PasswordBox.Password, UsernameBox.Text.Trim());
             await ShowMainAsync();
         }
@@ -69,8 +92,11 @@ public partial class MainWindow : Window
 
     private void SetAuthEnabled(bool enabled)
     {
-        EmailBox.IsEnabled = enabled; PasswordBox.IsEnabled = enabled; UsernameBox.IsEnabled = enabled;
-        LoginButton.IsEnabled = enabled; RegisterButton.IsEnabled = enabled;
+        EmailBox.IsEnabled = enabled;
+        PasswordBox.IsEnabled = enabled;
+        UsernameBox.IsEnabled = enabled;
+        LoginButton.IsEnabled = enabled;
+        RegisterButton.IsEnabled = enabled;
     }
 
     private void ShowLogin(string status)
@@ -98,13 +124,17 @@ public partial class MainWindow : Window
         {
             var ais = await _client.GetAisAsync();
             AiSelector.ItemsSource = ais;
-            var selected = ais.FirstOrDefault(x => x.AiId == _client.ActiveAiId) ?? ais.FirstOrDefault(x => x.Active) ?? ais.FirstOrDefault();
+            var selected = ais.FirstOrDefault(x => x.AiId == _client.ActiveAiId)
+                ?? ais.FirstOrDefault(x => x.Active)
+                ?? ais.FirstOrDefault();
+
             if (selected != null)
             {
                 AiSelector.SelectedValuePath = nameof(AiChoice.AiId);
                 AiSelector.SelectedValue = selected.AiId;
                 AiNameText.Text = selected.AiName;
-                if (selected.AiId != _client.ActiveAiId) await _client.SelectAiAsync(selected.AiId);
+                if (selected.AiId != _client.ActiveAiId)
+                    await _client.SelectAiAsync(selected.AiId);
             }
         }
         catch (Exception ex) { LoginStatus.Text = ex.Message; }
@@ -166,9 +196,11 @@ public partial class MainWindow : Window
     {
         var text = MessageInput.Text.Trim();
         if (text.Length == 0) return;
+
         ChatText.Text += (ChatText.Text.Length > 0 ? "\n\n" : "") + "You:\n" + text;
         MessageInput.Clear();
         TypingText.Text = (_client.ActiveAiName ?? "AI") + " is typing…";
+
         try { await _client.SendAsync(text); }
         catch (Exception ex) { TypingText.Text = ex.Message; }
     }
