@@ -1,22 +1,144 @@
 #include "gene_model.h"
 #include <fstream>
-#include <array>
+#include <cstring>
+#include <filesystem>
 
 namespace gene {
-static uint32_t readU32(std::istream& in) { std::array<unsigned char,4> b{}; in.read(reinterpret_cast<char*>(b.data()),4); return uint32_t(b[0]) | (uint32_t(b[1])<<8) | (uint32_t(b[2])<<16) | (uint32_t(b[3])<<24); }
+namespace {
+class Reader {
+public:
+    explicit Reader(std::istream& in) : _in(in) {}
+    template<class T> bool read(T& v) { _in.read(reinterpret_cast<char*>(&v), sizeof(T)); return bool(_in); }
+    bool bytes(void* p, std::streamsize n) { _in.read(reinterpret_cast<char*>(p), n); return bool(_in); }
+    bool u8(uint8_t& v) { return read(v); }
+    bool i8(int8_t& v) { return read(v); }
+    bool i32(int32_t& v) { return read(v); }
+    bool u32(uint32_t& v) { return read(v); }
+    bool f32(float& v) { return read(v); }
+    bool index(int32_t& out, uint8_t size, bool signedIndex) {
+        if (size == 1) { uint8_t v{}; if (!read(v)) return false; out = signedIndex ? int8_t(v) : v; return true; }
+        if (size == 2) { uint16_t v{}; if (!read(v)) return false; out = signedIndex ? int16_t(v) : v; return true; }
+        if (size == 4) { int32_t v{}; if (!read(v)) return false; out = v; return true; }
+        return false;
+    }
+    bool text(std::string& out, uint8_t encoding) {
+        int32_t bytesCount{}; if (!i32(bytesCount) || bytesCount < 0 || bytesCount > 64 * 1024 * 1024) return false;
+        std::string raw(static_cast<size_t>(bytesCount), '\0');
+        if (bytesCount && !bytes(raw.data(), bytesCount)) return false;
+        if (encoding == 0) {
+            // PMX UTF-16LE. Keep ASCII directly and replace non-ASCII code units with '?'
+            out.clear();
+            for (size_t i = 0; i + 1 < raw.size(); i += 2) {
+                uint16_t c = uint8_t(raw[i]) | (uint16_t(uint8_t(raw[i + 1])) << 8);
+                out.push_back(c < 128 ? char(c) : '?');
+            }
+        } else {
+            out = std::move(raw);
+        }
+        return true;
+    }
+private:
+    std::istream& _in;
+};
 
-bool Model::loadPmx(const std::string& path) {
-    std::ifstream in(path, std::ios::binary);
-    if (!in) return false;
-    char magic[4]{}; in.read(magic, 4);
-    if (std::string(magic,4) != "PMX ") return false;
-    float version{}; in.read(reinterpret_cast<char*>(&version), sizeof(version));
-    unsigned char headerSize{}; in.read(reinterpret_cast<char*>(&headerSize),1);
-    std::vector<unsigned char> header(headerSize); in.read(reinterpret_cast<char*>(header.data()), headerSize);
-    // This first milestone validates and opens PMX files. Full geometry decoding is next.
-    _bones.clear(); _morphs.clear(); _loaded = true;
+bool skipVertices(Reader& r, uint32_t count, uint8_t uvCount, uint8_t boneIndexSize) {
+    for (uint32_t i = 0; i < count; ++i) {
+        float f{};
+        for (int n = 0; n < 8 + uvCount * 4; ++n) if (!r.f32(f)) return false; // pos3+normal3+uv2 + extra UV vec4s
+        uint8_t weight{}; if (!r.u8(weight)) return false;
+        int32_t idx{};
+        switch (weight) {
+        case 0: if (!r.index(idx, boneIndexSize, false)) return false; break;
+        case 1: for (int n=0;n<2;++n) if (!r.index(idx,boneIndexSize,false)) return false; for(int n=0;n<8;++n) if(!r.f32(f)) return false; break;
+        case 2: case 4: for (int n=0;n<4;++n) if(!r.index(idx,boneIndexSize,false)); if(weight==2) for(int n=0;n<4;++n) if(!r.f32(f)) return false; else for(int n=0;n<4;++n) if(!r.f32(f)) return false; break;
+        default: return false;
+        }
+        if (!r.f32(f)) return false; // edge scale
+    }
     return true;
 }
 
-bool Model::loadTextures(const std::string&) { return _loaded; }
+bool skipMaterials(Reader& r, uint32_t count, uint8_t textureIndexSize) {
+    for (uint32_t i=0;i<count;++i) {
+        std::string s; if(!r.text(s,1) || !r.text(s,1)) return false;
+        float f{}; for(int n=0;n<4;++n) if(!r.f32(f)) return false; // diffuse
+        for(int n=0;n<3;++n) if(!r.f32(f)) return false; // specular
+        if(!r.f32(f)) return false; // spec power
+        for(int n=0;n<3;++n) if(!r.f32(f)) return false; // ambient
+        uint8_t flags{}; if(!r.u8(flags));
+        for(int n=0;n<4;++n) if(!r.f32(f)) return false; // edge color
+        if(!r.f32(f)) return false; // edge size
+        int32_t idx{}; if(!r.index(idx,textureIndexSize,false) || !r.index(idx,textureIndexSize,false)) return false;
+        uint8_t toon{}; if(!r.u8(toon)) return false;
+        if(toon==0) { if(!r.index(idx,textureIndexSize,false)) return false; } else { uint8_t one{}; if(!r.u8(one)) return false; }
+        if(!r.text(s,1)) return false; // memo
+        int32_t faces{}; if(!r.i32(faces) || faces < 0) return false;
+    }
+    return true;
+}
+}
+
+bool Model::loadPmx(const std::string& path) {
+    _loaded=false; _bones.clear(); _morphs.clear(); _vertexCount=_indexCount=_materialCount=0;
+    std::ifstream in(path, std::ios::binary);
+    if(!in) return false;
+    char magic[4]{}; if(!in.read(magic,4) || std::memcmp(magic,"PMX ",4)!=0) return false;
+    Reader r(in);
+    if(!r.f32(_version)) return false;
+    uint8_t headerSize{}; if(!r.u8(headerSize) || headerSize < 8) return false;
+    uint8_t header[8]{}; if(!r.bytes(header,headerSize)) return false;
+    uint8_t encoding=header[0], uvCount=header[1], vertexIndexSize=header[2], textureIndexSize=header[3], materialIndexSize=header[5], boneIndexSize=header[6], morphIndexSize=header[7];
+    if(vertexIndexSize!=1 && vertexIndexSize!=2 && vertexIndexSize!=4) return false;
+    std::string name, english, comment;
+    if(!r.text(name,encoding) || !r.text(english,encoding) || !r.text(comment,encoding) || !r.text(comment,encoding)) return false;
+    if(!r.u32(_vertexCount) || !skipVertices(r,_vertexCount,uvCount,boneIndexSize)) return false;
+    if(!r.u32(_indexCount)) return false;
+    int32_t idx{}; for(uint32_t i=0;i<_indexCount;++i) if(!r.index(idx,vertexIndexSize,false)) return false;
+    uint32_t textures{}; if(!r.u32(textures)) return false;
+    for(uint32_t i=0;i<textures;++i) if(!r.text(name,encoding)) return false;
+    if(!r.u32(_materialCount) || !skipMaterials(r,_materialCount,textureIndexSize)) return false;
+
+    uint32_t morphCount{}; if(!r.u32(morphCount)) return false;
+    for(uint32_t i=0;i<morphCount;++i) {
+        Morph m{}; if(!r.text(m.name,encoding) || !r.text(m.englishName,encoding)) return false;
+        uint8_t panel{}; if(!r.u8(panel) || !r.u8(m.type)) return false; m.panel=panel;
+        uint32_t offsets{}; if(!r.u32(offsets)) return false; m.offsetCount=offsets;
+        for(uint32_t j=0;j<offsets;++j) {
+            if(m.type==0) { if(!r.index(idx,morphIndexSize,false)) return false; if(!r.f32(m.weight)) return false; }
+            else if(m.type==1) { if(!r.index(idx,vertexIndexSize,false)) return false; float f; for(int n=0;n<3;++n) if(!r.f32(f)) return false; }
+            else if(m.type==2) { if(!r.index(idx,boneIndexSize,false)) return false; float f; for(int n=0;n<3;++n) if(!r.f32(f)) return false; for(int n=0;n<4;++n) if(!r.f32(f)) return false; }
+            else if(m.type==3) { if(!r.index(idx,materialIndexSize,false)) return false; float f; for(int n=0;n<11;++n) if(!r.f32(f)) return false; }
+            else if(m.type==4 || m.type==5) { if(!r.index(idx,morphIndexSize,false)) return false; float f; for(int n=0;n<3;++n) if(!r.f32(f)) return false; }
+            else if(m.type==8) { if(!r.index(idx,morphIndexSize,false)) return false; float f; for(int n=0;n<4;++n) if(!r.f32(f)) return false; }
+            else if(m.type==9) { if(!r.index(idx,materialIndexSize,false)) return false; float f; for(int n=0;n<11;++n) if(!r.f32(f)) return false; }
+            else return false;
+        }
+        _morphs.push_back(std::move(m));
+    }
+
+    uint32_t boneCount{}; if(!r.u32(boneCount)) return false;
+    _bones.reserve(boneCount);
+    for(uint32_t i=0;i<boneCount;++i) {
+        Bone b{}; if(!r.text(b.name,encoding) || !r.text(b.englishName,encoding)) return false;
+        float f{}; if(!r.f32(b.position.x)||!r.f32(b.position.y)||!r.f32(b.position.z)) return false;
+        if(!r.index(b.parent,boneIndexSize,false)) return false;
+        uint8_t flags{}; if(!r.u8(flags)) return false;
+        // Distance/position or parent depending on inherit flags.
+        if(flags & 0x0001) { if(!r.f32(f)) return false; }
+        else { if(!r.f32(f)) return false; }
+        if(flags & 0x0100 || flags & 0x0200) { if(!r.index(idx,boneIndexSize,false) || !r.f32(f)) return false; }
+        if(flags & 0x0400) { if(!r.f32(f)||!r.f32(f)||!r.f32(f)) return false; }
+        if(flags & 0x0800) { if(!r.index(idx,morphIndexSize,false)) return false; }
+        if(flags & 0x2000) { if(!r.i32(idx)) return false; uint32_t links=idx<0?0:uint32_t(idx); for(uint32_t j=0;j<links;++j) if(!r.index(idx,boneIndexSize,false)) return false; }
+        _bones.push_back(std::move(b));
+    }
+    _loaded=true;
+    return true;
+}
+
+bool Model::loadTextures(const std::string& directory) {
+    if(!_loaded) return false;
+    _textureDirectory = std::filesystem::path(directory).lexically_normal().string();
+    return std::filesystem::exists(_textureDirectory) && std::filesystem::is_directory(_textureDirectory);
+}
 }
