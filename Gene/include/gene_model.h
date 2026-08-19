@@ -42,12 +42,38 @@ struct Bone {
     Quaternion rotation{};
 };
 
+enum class MorphType : uint8_t { Group=0, Vertex=1, Bone=2, UV=3, UV1=4, UV2=5, UV3=6, UV4=7, Material=8, Flip=9, Impulse=10 };
+
+struct MorphOffset {
+    MorphType type{};
+    int32_t index{-1};
+    Vec3 position{};
+    Quaternion rotation{};
+    float weight{};
+    float uv[4]{};
+    uint8_t operation{};
+    float diffuse[4]{};
+    float specular[3]{};
+    float shininess{};
+    float ambient[3]{};
+    float edgeColor[4]{};
+    float edgeSize{};
+    float textureFactor[4]{};
+    float sphereTextureFactor[4]{};
+    float toonTextureFactor[4]{};
+    uint8_t localFlag{};
+    Vec3 velocity{};
+    Vec3 torque{};
+};
+
 struct Morph {
     std::string name;
     std::string englishName;
-    int panel{};
-    uint8_t type{};
+    uint8_t panel{};
+    MorphType type{};
     uint32_t offsetCount{};
+    std::vector<MorphOffset> offsets;
+    float value{};
 };
 
 class Model {
@@ -67,16 +93,22 @@ public:
     const std::vector<std::string>& textures() const noexcept { return _textures; }
     const std::string& textureDirectory() const noexcept { return _textureDirectory; }
     const std::string& error() const noexcept { return _error; }
+    bool setMorphWeight(const std::string& name, float value);
+    void clearMorphWeights();
+    void updateMorphs();
 private:
     bool fail(const std::string& message);
+    void applyMorph(size_t index, float weight, std::vector<float>& weights, std::vector<uint8_t>& visiting);
     bool _loaded = false;
     float _version = 0.0f;
     uint32_t _indexCount = 0;
     std::string _textureDirectory;
     std::string _error;
     std::vector<Vertex> _vertices;
+    std::vector<Vertex> _baseVertices;
     std::vector<uint32_t> _indices;
     std::vector<Material> _materials;
+    std::vector<Material> _baseMaterials;
     std::vector<std::string> _textures;
     std::vector<Bone> _bones;
     std::vector<Morph> _morphs;
