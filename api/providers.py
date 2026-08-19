@@ -9,11 +9,12 @@ def provider_name(settings):
     value = str(settings.get("api_provider") or settings.get("provider") or "huggingface").strip().lower()
     endpoint = str(settings.get("api_endpoint") or "").strip().lower()
     model = str(settings.get("api_model") or "").strip().lower()
+    has_openrouter_key = bool(str(settings.get("openrouter_token") or "").strip())
 
-    # Older OpenRouter settings were saved as "openai" because OpenRouter is
-    # OpenAI-compatible. Detect those persisted settings from their endpoint
-    # or model so they cannot accidentally be sent to api.openai.com.
-    if "openrouter.ai" in endpoint or model.startswith("openrouter/") or model.endswith(":free"):
+    # OpenRouter is OpenAI-compatible, and older AI-Server versions stored it
+    # as "openai". Recover those settings from their endpoint, model, or the
+    # provider-specific credential so they never get routed to api.openai.com.
+    if has_openrouter_key or "openrouter.ai" in endpoint or model.startswith("openrouter/") or model.endswith(":free"):
         return "openrouter"
     if value in ("openrouter", "openrouter.ai"):
         return "openrouter"
