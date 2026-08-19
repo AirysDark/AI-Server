@@ -10,10 +10,8 @@ def provider_name(settings):
     endpoint = str(settings.get("api_endpoint") or "").strip().lower()
     model = str(settings.get("api_model") or "").strip().lower()
     has_openrouter_key = bool(str(settings.get("openrouter_token") or "").strip())
-
-    # OpenRouter is OpenAI-compatible, and older AI-Server versions stored it
-    # as "openai". Recover those settings from their endpoint, model, or the
-    # provider-specific credential so they never get routed to api.openai.com.
+    if value in ("local", "local_ai", "local-ai", "local ai", "smollm2"):
+        return "local"
     if has_openrouter_key or "openrouter.ai" in endpoint or model.startswith("openrouter/") or model.endswith(":free"):
         return "openrouter"
     if value in ("openrouter", "openrouter.ai"):
@@ -27,6 +25,13 @@ def provider_name(settings):
 
 def chat(token, settings, system_prompt, prompt, image_path=None, timeout=45, model=None):
     provider = provider_name(settings)
+    if provider == "local":
+        from brain import think
+        import os
+        uid = str(settings.get("user_id") or "").strip()
+        ai_id = str(settings.get("ai_id") or "").strip()
+        root = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "users", uid, "ais", ai_id)
+        return think(prompt, settings, os.path.join(root, "brain_memory.json"), os.path.join(root, "learning_replies.json"))
     if provider == "google":
         return google_chat(token, settings, system_prompt, prompt, image_path=image_path, timeout=timeout, model=model)
     if provider == "openrouter":
