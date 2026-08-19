@@ -82,21 +82,29 @@ Maintain continuity with the conversation and use the supplied profile naturally
 
 
 def _token(settings, provider):
-    """Return the credential stored on this specific AI.
+    """Get the credential belonging to this AI and its selected provider.
 
-    The settings page stores the provider token in ``hf_token`` regardless of
-    whether the selected provider is Hugging Face, Google, or OpenAI. Older
-    settings may also contain provider-specific legacy fields, so those remain
-    accepted as a compatibility fallback. No server-wide token is used.
+    New settings use provider-specific fields. ``api_token`` and the legacy
+    ``hf_token`` field are accepted for backward compatibility. Nothing here
+    reads a server-wide environment credential, so one AI cannot borrow
+    another AI's key.
     """
-    token = str(settings.get("hf_token", "")).strip()
-    if token:
-        return token
     if provider == "google":
-        return str(settings.get("api_token", "") or settings.get("google_token", "") or settings.get("gemini_api_key", "")).strip()
+        return str(
+            settings.get("google_token")
+            or settings.get("gemini_api_key")
+            or settings.get("api_token")
+            or settings.get("hf_token")
+            or ""
+        ).strip()
     if provider == "openai":
-        return str(settings.get("api_token", "") or settings.get("openai_token", "")).strip()
-    return ""
+        return str(
+            settings.get("openai_token")
+            or settings.get("api_token")
+            or settings.get("hf_token")
+            or ""
+        ).strip()
+    return str(settings.get("hf_token") or settings.get("api_token") or "").strip()
 
 
 def _ask_provider(prompt, settings, knowledge, image_path, provider):
@@ -124,9 +132,7 @@ def _ask_provider(prompt, settings, knowledge, image_path, provider):
                 _mark_failure(key, e); print("ONLINE AI GOOGLE FAILED:", model, e)
         raise RuntimeError("Google AI Studio request failed for all available models")
     if provider == "openai":
-        model = str(local.get("api_model") or "").strip()
-        if not model:
-            model = "gpt-4o-mini"
+        model = str(local.get("api_model") or "").strip() or "gpt-4o-mini"
         key = f"openai:{local.get('api_endpoint') or 'default'}:{model}"
         if not _available(key):
             raise RuntimeError("OpenAI provider is temporarily cooling down after previous failures")
@@ -145,14 +151,12 @@ def _ask_provider(prompt, settings, knowledge, image_path, provider):
         models = [configured] + [m for m in models if m != configured]
     discovered = huggingface.discover_models(token, bool(image_path))
     models += [m for m in discovered if m not in models]
-    seen = set()
-    attempted = False
+    seen = set(); attempted = False
     for model in [m for m in models if m and not (m in seen or seen.add(m))]:
         key = f"huggingface:{model}"
         if not _available(key): continue
         attempted = True
         try:
-            local["api_provider"] = "huggingface"
             reply = provider_chat(token, local, system_prompt, prompt, image_path=image_path, model=model)
             if not reply: raise RuntimeError("Hugging Face returned an empty response")
             _mark_success(key); learn_online_response(prompt, reply, settings); return reply
