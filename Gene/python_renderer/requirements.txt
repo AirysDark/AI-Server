@@ -1,4 +1,4 @@
 pyglet>=2.0.15,<3
-pymeshio>=3.1.1
+pymeshio==3.0.1
 Pillow>=10.0
 numpy>=1.26
