@@ -8,15 +8,14 @@ def _title(data):
     explicit=str(data.get("title","")).strip() if isinstance(data,dict) else ""
     if explicit:return explicit[:80]
     for item in data.get("conversation",[]):
-        text=str(item.get("user",item.get("content",""))).strip()
+        text=str(item.get("user",item.get("user_message",item.get("content","")))).strip()
         if text:
             text=" ".join(text.split()); return text[:60]+("..." if len(text)>60 else "")
     return "New chat"
 def _normalise_record(record,cid=None):
     if not isinstance(record,dict):return None
     data=record.get("data") if isinstance(record.get("data"),dict) else record
-    if not isinstance(data,dict):return None
-    data.setdefault("conversation",[])
+    if not isinstance(data,dict) or not isinstance(data.get("conversation"),list):return None
     return {"conversation_id":cid or record.get("conversation_id") or "","title":record.get("title") or data.get("title") or _title(data),"created":record.get("created",data.get("created",0)),"updated":record.get("updated",data.get("updated",0)),"data":data}
 
 def list_chats(uid,ai_id):
@@ -31,10 +30,8 @@ def list_chats(uid,ai_id):
     result.sort(key=lambda x:x.get("updated",0) or 0,reverse=True); return result
 
 def new_chat(uid,ai_id):
-    cid="C-"+uuid.uuid4().hex[:16]; now=time.time()
-    data={"conversation":[],"memory":{},"proactive_state":{},"created":now,"updated":now,"title":"New chat"}
-    save_archived_conversation(uid,ai_id,cid,data)
-    return {"ok":True,"conversation_id":cid,"data":data}
+    cid="C-"+uuid.uuid4().hex[:16]; now=time.time(); data={"conversation":[],"memory":{},"proactive_state":{},"created":now,"updated":now,"title":"New chat"}
+    save_archived_conversation(uid,ai_id,cid,data); return {"ok":True,"conversation_id":cid,"data":data}
 
 def open_chat(uid,ai_id,cid):
     cid=_safe(cid)
@@ -46,10 +43,8 @@ def rename_chat(uid,ai_id,cid,title):
     if not title or not cid or cid=="current":return False
     path=os.path.join(conversations_root(uid,ai_id),cid+".json"); record=load_json(path,None)
     if not isinstance(record,dict):return False
-    if isinstance(record.get("data"),dict):
-        record["data"]["title"]=title; record["data"]["updated"]=time.time()
-    else:
-        record["title"]=title; record["updated"]=time.time()
+    target=record.get("data") if isinstance(record.get("data"),dict) else record
+    target["title"]=title; target["updated"]=time.time()
     save_json(path,record); return True
 
 def install_handler_routes(handler_class,server_module):
@@ -77,5 +72,6 @@ def install_handler_routes(handler_class,server_module):
             return self.send_json({"ok":True,"conversation_id":cid},uid,200,ai_id)
         result=open_chat(uid,ai_id,cid)
         if result is None:return self.send_json({"ok":False,"error":"Conversation not found"},uid,404,ai_id)
-        return self.send_json({"ok":True,"conversation_id":cid,"conversation":result.get("conversation",[]),"data":result},uid,200,ai_id)
+        # Return the archive payload both directly and under data so all existing clients can consume it.
+        return self.send_json({"ok":True,"conversation_id":cid,"conversation":result.get("conversation",[]),"memory":result.get("memory",{}),"proactive_state":result.get("proactive_state",{}),"created":result.get("created"),"updated":result.get("updated"),"data":result},uid,200,ai_id)
     handler_class.do_GET=do_get; handler_class.do_POST=do_post; handler_class._chat_routes_installed=True
