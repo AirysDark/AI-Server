@@ -56,8 +56,10 @@ def account_detail(uid):
 def update_account(uid,data):
  server=_server_module();accounts=server.get_accounts();account=accounts.setdefault("users",{}).get(uid)
  if not account:return {"ok":False,"error":"Account not found"},404
- for key in ("username","email","banned"):
-  if key in data:account[key]=data[key]
+ for key,value in data.items():
+  if key in {"uid","reset_password","change_password","new_password"}:continue
+  if key=="password":continue
+  account[key]=value
  result={"ok":True}
  if data.get("reset_password"):
   temp=secrets.token_urlsafe(9);account["password"]=hash_password(temp);account["must_change_password"]=True;result["temporary_password"]=temp
@@ -66,6 +68,17 @@ def update_account(uid,data):
   if len(new)<6:return {"ok":False,"error":"Password must be at least 6 characters"},400
   account["password"]=hash_password(new);account["must_change_password"]=False
  server.save_json(server.AUTH_FILE,accounts);return result,200
+def ai_detail(uid,ai_id):
+ server=_server_module();ai_id=str(ai_id or "");settings=server.load_settings(uid,ai_id);reg=server.get_ai_registry().get("accounts",{}).get(uid,{})
+ if not any(x.get("ai_id")==ai_id for x in reg.get("ais",[])):return {"ok":False,"error":"AI not found"},404
+ meta=next((x for x in reg.get("ais",[]) if x.get("ai_id")==ai_id),{})
+ return {"ok":True,"ai_id":ai_id,"settings":settings,"registry":meta},200
+def update_ai(uid,ai_id,data):
+ server=_server_module();ai_id=str(ai_id or "");reg=server.get_ai_registry();account=reg.get("accounts",{}).get(uid,{})
+ if not any(x.get("ai_id")==ai_id for x in account.get("ais",[])):return {"ok":False,"error":"AI not found"},404
+ if not isinstance(data,dict):return {"ok":False,"error":"AI settings must be an object"},400
+ data["user_id"]=uid;data["ai_id"]=ai_id;server.save_settings(uid,ai_id,data)
+ return {"ok":True,"settings":server.load_settings(uid,ai_id)},200
 def _user_root(uid):return os.path.abspath(os.path.join(USERS_DIR,os.path.basename(uid)))
 def _safe_target(uid,relative):
  root=_user_root(uid);target=os.path.abspath(os.path.join(root,str(relative or "").lstrip("/")));return target if target.startswith(root+os.sep) else None
@@ -118,6 +131,7 @@ def handle_get(handler,path,query):
   a=ensure_admin();handler.send_json({"ok":True,"username":a.get("username","admin"),"must_change_password":bool(a.get("must_change_password",False))});return True
  if path=="/api/admin/dashboard":d,s=dashboard(handler);handler.send_json(d,status=s);return True
  if path=="/api/admin/account":d,s=account_detail((query.get("uid") or [""])[0]);handler.send_json(d,status=s);return True
+ if path=="/api/admin/ai":d,s=ai_detail((query.get("uid") or [""])[0],(query.get("ai_id") or [""])[0]);handler.send_json(d,status=s);return True
  if path=="/api/admin/files":d,s=files(handler,(query.get("uid") or [None])[0],(query.get("path") or [""])[0]);handler.send_json(d,status=s);return True
  if path=="/api/admin/file/read":d,s=read_json_file((query.get("uid") or [""])[0],(query.get("path") or [""])[0]);handler.send_json(d,status=s);return True
  return False
@@ -128,6 +142,7 @@ def handle_post(handler,path,data):
  if path=="/api/admin/logout":logout(handler);handler.send_json({"ok":True});return True,None
  if path=="/api/admin/password":r,s=change_password(handler,data.get("old_password"),data.get("new_password"));handler.send_json(r,status=s);return True,None
  if path=="/api/admin/account/update":r,s=update_account(str(data.get("uid","")),data);handler.send_json(r,status=s);return True,None
+ if path=="/api/admin/ai/update":r,s=update_ai(str(data.get("uid","")),str(data.get("ai_id","")),data.get("settings"));handler.send_json(r,status=s);return True,None
  if path=="/api/admin/file/save":r,s=update_json_file(str(data.get("uid","")),str(data.get("path","")),data.get("data"));handler.send_json(r,status=s);return True,None
  if path=="/api/admin/file/delete":r,s=delete_file(str(data.get("uid","")),str(data.get("path","")));handler.send_json(r,status=s);return True,None
  if path=="/api/admin/account/delete":r,s=delete_account(str(data.get("uid","")));handler.send_json(r,status=s);return True,None
