@@ -47,16 +47,28 @@ void setup() {
 
     display.showWiFi(WiFi.localIP().toString());
     display.showServer("checking...");
+    if (!server.serverReachable()) {
+        display.showServer("offline: " + server.lastError());
+        return;
+    }
+    display.showServer("online");
 
-    if (server.serverReachable()) {
-        display.showServer("online");
+    if (String(AiConfig::ACCOUNT_EMAIL) != "YOUR_AI_SERVER_EMAIL" &&
+        String(AiConfig::ACCOUNT_PASSWORD) != "YOUR_AI_SERVER_PASSWORD") {
+        display.showServer("logging in...");
+        if (!server.login(AiConfig::ACCOUNT_EMAIL, AiConfig::ACCOUNT_PASSWORD)) {
+            display.showError("Login: " + server.lastError());
+            return;
+        }
+        Serial.println("[AUTH] logged in");
+
         String chats;
         if (server.loadConversations(chats)) {
-            Serial.println("[CHAT] Conversations loaded");
+            Serial.println("[CHAT] Conversations loaded:");
             Serial.println(chats);
         }
     } else {
-        display.showServer("offline: " + server.lastError());
+        display.showServer("online - credentials not configured");
     }
 }
 
