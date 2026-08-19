@@ -30,15 +30,16 @@ void setup() {
     touch.begin();
     chat.begin();
     character.begin();
-    Serial.println("[BOOT] AI Server ESP32-S3 client");
     sdcard.begin();
     character.loadFromSD();
+    Serial.printf("[CHARACTER] %s renderer=%s\n", character.config().name.c_str(), character.config().renderer.c_str());
     server.begin();
+    display.updateCharacter(character.animation().state());
     display.showWiFi("connecting...");
-    if (!server.connectWiFi(AI_WIFI_SSID, AI_WIFI_PASSWORD)) { character.setAnimation("offline"); display.showError(server.lastError()); return; }
+    if (!server.connectWiFi(AI_WIFI_SSID, AI_WIFI_PASSWORD)) { character.setAnimation("offline"); display.updateCharacter(character.animation().state()); display.showError(server.lastError()); return; }
     display.showWiFi(WiFi.localIP().toString());
     display.showServer("checking...");
-    if (!server.serverReachable()) { character.setAnimation("offline"); display.showServer("offline: " + server.lastError()); return; }
+    if (!server.serverReachable()) { character.setAnimation("offline"); display.updateCharacter(character.animation().state()); display.showServer("offline: " + server.lastError()); return; }
     display.showServer("online");
     if (String(AiConfig::ACCOUNT_EMAIL) != "YOUR_AI_SERVER_EMAIL" && String(AiConfig::ACCOUNT_PASSWORD) != "YOUR_AI_SERVER_PASSWORD") {
         character.setAnimation("thinking");
@@ -54,6 +55,15 @@ void setup() {
 void loop() {
     touch.update();
     character.update();
+    static AnimationState lastState = AnimationState::Offline;
+    static uint32_t lastFrame = 0;
+    const AnimationState current = character.animation().state();
+    const uint32_t frame = millis() / 100;
+    if (current != lastState || frame != lastFrame) {
+        lastState = current;
+        lastFrame = frame;
+        display.updateCharacter(current, frame);
+    }
     static unsigned long lastCheck = 0;
     if (millis() - lastCheck >= AiConfig::RECONNECT_INTERVAL_MS) {
         lastCheck = millis();
