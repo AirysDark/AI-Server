@@ -7,7 +7,8 @@ from http.server import ThreadingHTTPServer
 from core.server_impl import AIHandler
 from core.stage3_bridge import apply as _apply_stage3
 from core.stage4_bridge import apply as _apply_stage4
-_apply_stage3();_apply_stage4()
+from core.stage5_profile_bridge import apply as _apply_stage5
+_apply_stage3();_apply_stage4();_apply_stage5()
 import chats_api
 chats_api.install_handler_routes(AIHandler,__import__("core.server_impl",fromlist=["AIHandler"]))
 from core.admin_bridge import install_handler_routes as _install_admin_routes
