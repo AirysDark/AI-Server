@@ -15,6 +15,9 @@ public:
     void present();
     void shutdown();
 private:
+    bool ensureBackBuffer(int width, int height);
+    void destroyBackBuffer();
+
     uint32_t _width = 1280;
     uint32_t _height = 720;
     uint32_t _bufferWidth = 0;
