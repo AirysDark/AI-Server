@@ -7,6 +7,7 @@
 #include "sdcard.h"
 #include "chat.h"
 #include "character.h"
+#include "character_package.h"
 
 #ifndef AI_WIFI_SSID
 #define AI_WIFI_SSID "YOUR_WIFI_SSID"
@@ -21,6 +22,7 @@ AiTouch touch;
 AiSdCard sdcard;
 ChatManager chat;
 CharacterController character;
+CharacterPackageManager packages;
 
 void setup() {
     Serial.begin(115200);
@@ -31,8 +33,11 @@ void setup() {
     chat.begin();
     character.begin();
     sdcard.begin();
+    packages.begin();
+    if (sdcard.mounted() && packages.scan()) {
+        Serial.printf("[CHARACTER] loaded %s (%s) from %s\n", packages.active().name.c_str(), packages.active().renderer.c_str(), packages.active().root.c_str());
+    }
     character.loadFromSD();
-    Serial.printf("[CHARACTER] %s renderer=%s\n", character.config().name.c_str(), character.config().renderer.c_str());
     server.begin();
     display.updateCharacter(character.animation().state());
     display.showWiFi("connecting...");
@@ -56,7 +61,7 @@ void loop() {
     touch.update();
     character.update();
     static AnimationState lastState = AnimationState::Offline;
-    static uint32_t lastFrame = 0;
+    static uint32_t lastFrame = UINT32_MAX;
     const AnimationState current = character.animation().state();
     const uint32_t frame = millis() / 100;
     if (current != lastState || frame != lastFrame) {
