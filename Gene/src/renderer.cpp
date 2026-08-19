@@ -173,9 +173,6 @@ void Renderer::drawTexturedTriangle(const Vertex& a, const Vertex& b, const Vert
     if (minX > maxX || minY > maxY) return;
     auto* dst = static_cast<uint32_t*>(_backBufferPixels);
     const bool textured = texture && texture->loaded() && texture->width > 0 && texture->height > 0;
-
-    // Match MMD Tools: final alpha is the product of material alpha and the
-    // applicable image alpha. BMP/JPEG image alpha is disabled by TextureLoader.
     const uint8_t materialAlpha = uint8_t(std::clamp(material.diffuse[3] * 255.0f, 0.0f, 255.0f));
 
     for (int y=minY; y<=maxY; ++y) for (int x=minX; x<=maxX; ++x) {
@@ -183,8 +180,8 @@ void Renderer::drawTexturedTriangle(const Vertex& a, const Vertex& b, const Vert
         float w0=edge(p[1].x,p[1].y,p[2].x,p[2].y,px,py);
         float w1=edge(p[2].x,p[2].y,p[0].x,p[0].y,px,py);
         float w2=edge(p[0].x,p[0].y,p[1].x,p[1].y,px,py);
-        if ((area > 0.0f && (w0<0.0f||w1<0.0f||w2<0.0f)) ||
-            (area < 0.0f && (w0>0.0f||w1>0.0f||w2>0.0f))) continue;
+        if (!((w0 >= 0.0f && w1 >= 0.0f && w2 >= 0.0f) ||
+              (w0 <= 0.0f && w1 <= 0.0f && w2 <= 0.0f))) continue;
         w0/=area; w1/=area; w2/=area;
         const float invDepth=w0*p[0].invDepth+w1*p[1].invDepth+w2*p[2].invDepth;
         if (invDepth<=0.0f) continue;
