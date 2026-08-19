@@ -23,10 +23,10 @@ bool CharacterController::loadFromSD(const char* path) {
 void CharacterController::setAnimation(const String& name, uint32_t durationMs, bool loop) {
     if (name == "thinking") _animation.setState(AnimationState::Thinking, durationMs, loop);
     else if (name == "talking") _animation.setState(AnimationState::Talking, durationMs, loop);
-    else if (name == "happy") _animation.setState(AnimationState::Happy, durationMs, loop);
+    else if (name == "happy" || name == "excited" || name == "greeting") _animation.setState(AnimationState::Happy, durationMs, loop);
     else if (name == "sad") _animation.setState(AnimationState::Sad, durationMs, loop);
     else if (name == "angry") _animation.setState(AnimationState::Angry, durationMs, loop);
-    else if (name == "surprised") _animation.setState(AnimationState::Surprised, durationMs, loop);
+    else if (name == "surprised" || name == "curious") _animation.setState(AnimationState::Surprised, durationMs, loop);
     else if (name == "sleepy") _animation.setState(AnimationState::Sleepy, durationMs, loop);
     else if (name == "offline") _animation.setState(AnimationState::Offline, durationMs, loop);
     else _animation.setState(AnimationState::Idle, durationMs, loop);
