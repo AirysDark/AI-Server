@@ -1,7 +1,9 @@
+import hashlib
 import os
 import time
 import re
 import json
+from threading import Lock
 
 from brain import learn_online_response, process_feedback_queue
 from api import huggingface
@@ -10,20 +12,51 @@ from api.providers import chat as provider_chat, provider_name
 from core.config import USERS_DIR
 
 _HEALTH = {}
+_HEALTH_LOCK = Lock()
+_REQUEST_LOCKS = {}
+_REQUEST_LOCKS_GUARD = Lock()
 _FAILURE_COOLDOWN = 300
 
 
+def _token_fingerprint(token):
+    return hashlib.sha256(str(token or "").encode("utf-8")).hexdigest()[:16]
+
+
+def _health_key(provider, model, token):
+    return f"{provider}:{model}:{_token_fingerprint(token)}"
+
+
 def _available(key):
-    state = _HEALTH.get(key)
+    with _HEALTH_LOCK:
+        state = _HEALTH.get(key)
     return not state or time.time() - state.get("failed_at", 0) >= _FAILURE_COOLDOWN
 
 
 def _mark_success(key):
-    _HEALTH.pop(key, None)
+    with _HEALTH_LOCK:
+        _HEALTH.pop(key, None)
 
 
 def _mark_failure(key, error=None):
-    _HEALTH[key] = {"failed_at": time.time(), "error": str(error or "")[:300]}
+    with _HEALTH_LOCK:
+        _HEALTH[key] = {"failed_at": time.time(), "error": str(error or "")[:300]}
+
+
+def _request_lock(key):
+    with _REQUEST_LOCKS_GUARD:
+        return _REQUEST_LOCKS.setdefault(key, Lock())
+
+
+def _api_call(key, callback):
+    """Serialize requests sharing the same provider/model/credential.
+
+    Multi-chat can launch several AIs at once. When those AIs share an API
+    credential, concurrent requests can trigger provider rate limits even
+    though the same credential works normally in single chat. Different
+    credentials remain independent and can continue concurrently.
+    """
+    with _request_lock(key):
+        return callback()
 
 
 def _ai_storage_root(settings):
@@ -82,13 +115,7 @@ Maintain continuity with the conversation and use the supplied profile naturally
 
 
 def _token(settings, provider):
-    """Get the credential belonging to this AI and its selected provider.
-
-    New settings use provider-specific fields. ``api_token`` and the legacy
-    ``hf_token`` field are accepted for backward compatibility. Nothing here
-    reads a server-wide environment credential, so one AI cannot borrow
-    another AI's key.
-    """
+    """Get the credential belonging to this AI and its selected provider."""
     if provider == "google":
         return str(
             settings.get("google_token")
@@ -121,10 +148,10 @@ def _ask_provider(prompt, settings, knowledge, image_path, provider):
         for model in google.discover_models(token):
             if model not in models: models.append(model)
         for model in models:
-            key = f"google:{model}"
+            key = _health_key("google", model, token)
             if not _available(key): continue
             try:
-                reply = provider_chat(token, local, system_prompt, prompt, image_path=image_path, model=model)
+                reply = _api_call(key, lambda: provider_chat(token, local, system_prompt, prompt, image_path=image_path, model=model))
                 if not reply: raise RuntimeError("Google returned an empty response")
                 _mark_success(key); learn_online_response(prompt, reply, settings)
                 return reply
@@ -133,31 +160,29 @@ def _ask_provider(prompt, settings, knowledge, image_path, provider):
         raise RuntimeError("Google AI Studio request failed for all available models")
     if provider == "openai":
         model = str(local.get("api_model") or "").strip() or "gpt-4o-mini"
-        key = f"openai:{local.get('api_endpoint') or 'default'}:{model}"
+        key = _health_key("openai", f"{local.get('api_endpoint') or 'default'}:{model}", token)
         if not _available(key):
             raise RuntimeError("OpenAI provider is temporarily cooling down after previous failures")
         try:
-            reply = provider_chat(token, local, system_prompt, prompt, image_path=image_path, model=model)
+            reply = _api_call(key, lambda: provider_chat(token, local, system_prompt, prompt, image_path=image_path, model=model))
             if not reply: raise RuntimeError("OpenAI returned an empty response")
             _mark_success(key); learn_online_response(prompt, reply, settings); return reply
         except Exception as e:
             _mark_failure(key, e); print("ONLINE AI OPENAI FAILED:", e); raise
     models = huggingface.VISION_MODELS if image_path else huggingface.TEXT_MODELS
     if image_path: models = [m for m in models if huggingface.is_vision_model(m)]
-    if not models:
-        models = ["Qwen/Qwen2.5-7B-Instruct-1M"]
+    if not models: models = ["Qwen/Qwen2.5-7B-Instruct-1M"]
     configured = str(local.get("api_model") or "").strip()
-    if configured:
-        models = [configured] + [m for m in models if m != configured]
+    if configured: models = [configured] + [m for m in models if m != configured]
     discovered = huggingface.discover_models(token, bool(image_path))
     models += [m for m in discovered if m not in models]
     seen = set(); attempted = False
     for model in [m for m in models if m and not (m in seen or seen.add(m))]:
-        key = f"huggingface:{model}"
+        key = _health_key("huggingface", model, token)
         if not _available(key): continue
         attempted = True
         try:
-            reply = provider_chat(token, local, system_prompt, prompt, image_path=image_path, model=model)
+            reply = _api_call(key, lambda: provider_chat(token, local, system_prompt, prompt, image_path=image_path, model=model))
             if not reply: raise RuntimeError("Hugging Face returned an empty response")
             _mark_success(key); learn_online_response(prompt, reply, settings); return reply
         except Exception as e:
