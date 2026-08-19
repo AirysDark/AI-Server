@@ -59,12 +59,18 @@ int main(int argc, char** argv)
         auto now = std::chrono::steady_clock::now();
         float delta = std::chrono::duration<float>(now - previous).count();
         previous = now;
+
         renderer.pollEvents();
         player.update(delta);
         renderer.draw(model);
-        renderer.present();
+
+        // draw() paints the current frame directly. Do not invalidate the
+        // window here: doing so schedules WM_PAINT immediately after the
+        // frame and the default window paint was clearing the rendered mesh,
+        // producing the visible load/unload flicker.
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
     }
+
     renderer.shutdown();
     return 0;
 }
