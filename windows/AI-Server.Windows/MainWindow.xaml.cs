@@ -26,13 +26,15 @@ public partial class MainWindow : Window
     {
         try
         {
-            var health = await _api.HealthAsync();
-            LoginStatus.Text = health.Ok ? $"Connected to {health.Host}" : "Server responded, but health check failed.";
+            var me = await _api.MeAsync();
+            if (me.Authenticated) await ShowMainAsync();
+            else
+            {
+                var health = await _api.HealthAsync();
+                LoginStatus.Text = health.Ok ? $"Connected to {health.Host}. Sign in to continue." : "Server responded, but health check failed.";
+            }
         }
-        catch (Exception ex)
-        {
-            LoginStatus.Text = FormatException("Server unavailable", ex);
-        }
+        catch (Exception ex) { LoginStatus.Text = FormatException("Server unavailable", ex); }
     }
 
     private async void Login_Click(object sender, RoutedEventArgs e) => await Authenticate(() => _api.LoginAsync(EmailBox.Text.Trim(), PasswordBox.Password));
@@ -40,32 +42,15 @@ public partial class MainWindow : Window
 
     private async Task Authenticate(Func<Task<AuthResponse>> action)
     {
-        try
-        {
-            SetLoginEnabled(false);
-            LoginStatus.Text = "Connecting to AI-Server...";
-            await action();
-            await ShowMainAsync();
-        }
-        catch (Exception ex)
-        {
-            LoginStatus.Text = FormatException("Connection failed", ex);
-        }
-        finally
-        {
-            SetLoginEnabled(true);
-        }
+        try { SetLoginEnabled(false); LoginStatus.Text = "Signing in to AI-Server..."; await action(); await ShowMainAsync(); }
+        catch (Exception ex) { LoginStatus.Text = FormatException("Authentication failed", ex); }
+        finally { SetLoginEnabled(true); }
     }
 
     private static string FormatException(string prefix, Exception ex)
     {
-        var lines = new List<string> { prefix + ": " + ex.Message };
-        var inner = ex.InnerException;
-        while (inner != null)
-        {
-            lines.Add("Inner: " + inner.Message);
-            inner = inner.InnerException;
-        }
+        var lines = new List<string> { prefix + ": " + ex.Message }; var inner = ex.InnerException;
+        while (inner != null) { lines.Add("Inner: " + inner.Message); inner = inner.InnerException; }
         return string.Join(Environment.NewLine, lines);
     }
 
@@ -76,7 +61,8 @@ public partial class MainWindow : Window
     {
         var ais = await _api.GetAisAsync(); _changingAi = true; AiSelector.ItemsSource = ais;
         var selected = ais.FirstOrDefault(x => x.AiId == _api.ActiveAiId) ?? ais.FirstOrDefault(x => x.Active) ?? ais.FirstOrDefault();
-        if (selected is not null) AiSelector.SelectedItem = selected; _changingAi = false;
+        if (selected is not null) { AiSelector.SelectedItem = selected; _api.ActiveAiId = selected.AiId; }
+        _changingAi = false;
     }
 
     private async Task LoadCurrentAiAsync()
