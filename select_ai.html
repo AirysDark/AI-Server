@@ -24,6 +24,8 @@ button.secondary{background:#444}
 button.danger{background:#7a3333}
 .main-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
 .main-actions button{flex:1;min-width:120px}
+.multi-chat-wrap{margin-top:10px}
+.multi-chat{display:block;width:100%;background:#ff5c9a;text-align:center;text-decoration:none;color:#fff;border-radius:10px;padding:13px 15px;font-size:16px;border:0;cursor:pointer}
 .download-section{max-width:700px;margin:18px auto 0;padding:0 18px 18px;text-align:center}
 .download{display:block;width:100%;background:#333;border:1px solid #555;text-align:center;text-decoration:none;color:#fff;border-radius:10px;padding:13px 15px;font-size:15px}
 .download:hover{background:#444}
@@ -46,6 +48,7 @@ button.danger{background:#7a3333}
     <h1>Select your AI</h1>
     <p class="small">Your account can have up to 3 separate AIs. Each AI keeps its own settings, personality, photos, memory and conversation history.</p>
 
+    <!-- SINGLE-AI SELECTION: these profiles remain here and are independent of Multiple Chat. -->
     <div id="list" class="ai-list"></div>
 
     <div class="main-actions">
@@ -53,11 +56,15 @@ button.danger{background:#7a3333}
       <button class="secondary" onclick="logout()">Logout</button>
     </div>
 
+    <!-- MULTIPLE CHAT IS A SEPARATE FEATURE from selecting one AI. -->
+    <div class="multi-chat-wrap">
+      <a class="multi-chat" href="multi_chat.html">Multiple Chat</a>
+    </div>
+
     <div id="error" class="error"></div>
   </div>
 </div>
 
-<!-- Android download is intentionally the last thing on the page. -->
 <div class="download-section">
   <a class="download" href="/Apk/app-debug.apk" download>Download Android App</a>
 </div>
@@ -130,7 +137,6 @@ async function load() {
                 select.onclick = () => selectAI(ai.ai_id, ai.setup_complete);
                 actions.appendChild(select);
 
-                // Keep Delete available, directly underneath Select, without covering the AI information.
                 if (j.ais.length > 1) {
                     const del = document.createElement("button");
                     del.className = "danger";
