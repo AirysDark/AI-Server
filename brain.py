@@ -17,9 +17,11 @@ LEARNING_FILE = os.path.join(LEARNING_DIR, "replies.json")
 TRAINING_FILE = os.path.join(LEARNING_DIR, "training.json")
 FEEDBACK_FILE = os.path.join(LEARNING_DIR, "feedback.json")
 
-LOCAL_MODEL_PATH = os.path.abspath(os.getenv("AI_LOCAL_MODEL", os.path.join(BASE_DIR, "models", "SmolLM2-1.7B-Instruct-Q4_K_M.gguf")))
+# Local fallback model. The Q3_K_M build is deliberately the default because
+# it leaves more RAM for PythonAnywhere than the ~1.05 GB Q4_K_M build.
+LOCAL_MODEL_PATH = os.path.abspath(os.getenv("AI_LOCAL_MODEL", os.path.join(BASE_DIR, "models", "SmolLM2-1.7B-Instruct-Q3_K_M.gguf")))
 LOCAL_MODEL_THREADS = max(1, int(os.getenv("AI_LOCAL_MODEL_THREADS", "2")))
-LOCAL_MODEL_CTX = max(1024, int(os.getenv("AI_LOCAL_MODEL_CTX", "4096")))
+LOCAL_MODEL_CTX = max(1024, int(os.getenv("AI_LOCAL_MODEL_CTX", "3072")))
 LOCAL_MODEL_MAX_TOKENS = max(64, int(os.getenv("AI_LOCAL_MODEL_MAX_TOKENS", "384")))
 LOCAL_MODEL_TEMPERATURE = float(os.getenv("AI_LOCAL_MODEL_TEMPERATURE", "0.75"))
 _LOCAL_LLM = None
@@ -30,13 +32,21 @@ def _load_local_llm():
     global _LOCAL_LLM, _LOCAL_LLM_ERROR
     if _LOCAL_LLM is not None:
         return _LOCAL_LLM
-    if _LOCAL_LLM_ERROR or not os.path.isfile(LOCAL_MODEL_PATH):
-        if not _LOCAL_LLM_ERROR:
-            _LOCAL_LLM_ERROR = f"Local GGUF model not found: {LOCAL_MODEL_PATH}"
+    if not os.path.isfile(LOCAL_MODEL_PATH):
+        _LOCAL_LLM_ERROR = f"Local GGUF model not found: {LOCAL_MODEL_PATH}"
+        print("LOCAL AI LOAD ERROR:", _LOCAL_LLM_ERROR)
         return None
     try:
         from llama_cpp import Llama
-        _LOCAL_LLM = Llama(model_path=LOCAL_MODEL_PATH, n_ctx=LOCAL_MODEL_CTX, n_threads=LOCAL_MODEL_THREADS, n_batch=256, verbose=False)
+        _LOCAL_LLM = Llama(
+            model_path=LOCAL_MODEL_PATH,
+            n_ctx=LOCAL_MODEL_CTX,
+            n_threads=LOCAL_MODEL_THREADS,
+            n_batch=128,
+            verbose=False,
+        )
+        _LOCAL_LLM_ERROR = None
+        print("LOCAL AI READY:", LOCAL_MODEL_PATH)
         return _LOCAL_LLM
     except Exception as exc:
         _LOCAL_LLM_ERROR = f"Local LLM initialization failed: {exc}"
