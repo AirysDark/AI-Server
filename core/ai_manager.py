@@ -11,6 +11,7 @@ def ai_root(uid,ai_id): return os.path.join(ais_root(uid),clean_id(ai_id))
 def settings_file(uid,ai_id): return os.path.join(ai_root(uid,ai_id),"settings.json")
 def conversations_root(uid,ai_id): return os.path.join(ai_root(uid,ai_id),"conversations")
 def conversation_path(uid,ai_id,conversation_id): return os.path.join(conversations_root(uid,ai_id),clean_id(conversation_id)+".json")
+def ai_photo_dir(uid,ai_id): return os.path.join(ai_root(uid,ai_id),"ai_photos")
 def legacy_conversation_file(uid,ai_id): return os.path.join(ai_root(uid,ai_id),"conversation.json")
 
 def _payload(value):
