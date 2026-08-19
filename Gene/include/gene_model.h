@@ -10,7 +10,7 @@ struct Quaternion { float x{}, y{}, z{}, w{1.0f}; };
 struct Vertex { Vec3 position{}; Vec3 normal{}; Vec2 uv{}; };
 struct Material { std::string name; std::string englishName; int32_t textureIndex{-1}; int32_t sphereTextureIndex{-1}; uint32_t indexCount{}; };
 struct Bone { std::string name; std::string englishName; int parent{-1}; Vec3 position{}; Quaternion rotation{}; };
-struct Morph { std::string name; std::string englishName; int panel{}; uint8_t type{}; uint32_t offsetCount{}; float weight{}; };
+struct Morph { std::string name; std::string englishName; int panel{}; uint8_t type{}; uint32_t offsetCount{}; };
 
 class Model {
 public:
@@ -28,11 +28,14 @@ public:
     const std::vector<uint32_t>& indices() const noexcept { return _indices; }
     const std::vector<std::string>& textures() const noexcept { return _textures; }
     const std::string& textureDirectory() const noexcept { return _textureDirectory; }
+    const std::string& error() const noexcept { return _error; }
 private:
+    bool fail(const std::string& message);
     bool _loaded = false;
     float _version = 0.0f;
     uint32_t _indexCount = 0;
     std::string _textureDirectory;
+    std::string _error;
     std::vector<Vertex> _vertices;
     std::vector<uint32_t> _indices;
     std::vector<Material> _materials;
