@@ -82,18 +82,23 @@ Maintain continuity with the conversation and use the supplied profile naturally
 
 
 def _token(settings, provider):
+    """Return ONLY the credential configured for this specific AI.
+
+    No server-wide environment token is used here.  Solo Chat and Multi Chat
+    therefore cannot silently use another AI's credential.
+    """
     if provider == "huggingface":
-        return str(settings.get("hf_token", "")).strip() or os.getenv("HF_TOKEN", "").strip()
-    token = str(settings.get("api_token", "") or settings.get("openai_token", "") or settings.get("hf_token", "")).strip()
-    if token: return token
-    if provider == "google": return os.getenv("GEMINI_API_KEY", "").strip()
-    return os.getenv("OPENAI_API_KEY", "").strip()
+        return str(settings.get("hf_token", "")).strip()
+    if provider == "google":
+        return str(settings.get("api_token", "") or settings.get("google_token", "") or settings.get("gemini_api_key", "")).strip()
+    return str(settings.get("api_token", "") or settings.get("openai_token", "")).strip()
 
 
 def _ask_provider(prompt, settings, knowledge, image_path, provider):
     local = dict(settings); local["api_provider"] = provider
     token = _token(local, provider)
-    if not token: return None
+    if not token:
+        raise RuntimeError(f"{provider} API token is not configured for this AI")
     system_prompt = _system_prompt(local, knowledge)
     if provider == "google":
         configured = str(local.get("api_model") or "").strip()
@@ -107,34 +112,50 @@ def _ask_provider(prompt, settings, knowledge, image_path, provider):
             if not _available(key): continue
             try:
                 reply = provider_chat(token, local, system_prompt, prompt, image_path=image_path, model=model)
+                if not reply: raise RuntimeError("Google returned an empty response")
                 _mark_success(key); learn_online_response(prompt, reply, settings)
                 return reply
             except Exception as e:
                 _mark_failure(key, e); print("ONLINE AI GOOGLE FAILED:", model, e)
-        return None
+        raise RuntimeError("Google AI Studio request failed for all available models")
     if provider == "openai":
-        model = str(local.get("api_model") or os.getenv("AI_OPENAI_MODEL") or "gpt-4o-mini").strip()
+        model = str(local.get("api_model") or "").strip()
+        if not model:
+            model = "gpt-4o-mini"
         key = f"openai:{local.get('api_endpoint') or 'default'}:{model}"
-        if not _available(key): return None
+        if not _available(key):
+            raise RuntimeError("OpenAI provider is temporarily cooling down after a previous failure")
         try:
             reply = provider_chat(token, local, system_prompt, prompt, image_path=image_path, model=model)
+            if not reply: raise RuntimeError("OpenAI returned an empty response")
             _mark_success(key); learn_online_response(prompt, reply, settings); return reply
         except Exception as e:
-            _mark_failure(key, e); print("ONLINE AI OPENAI FAILED:", e); return None
+            _mark_failure(key, e); print("ONLINE AI OPENAI FAILED:", e); raise
     models = huggingface.VISION_MODELS if image_path else huggingface.TEXT_MODELS
     if image_path: models = [m for m in models if huggingface.is_vision_model(m)]
-    models += [m for m in huggingface.discover_models(token, bool(image_path)) if m not in models]
+    if not models:
+        models = ["Qwen/Qwen2.5-7B-Instruct-1M"]
+    configured = str(local.get("api_model") or "").strip()
+    if configured:
+        models = [configured] + [m for m in models if m != configured]
+    discovered = huggingface.discover_models(token, bool(image_path))
+    models += [m for m in discovered if m not in models]
     seen = set()
+    attempted = False
     for model in [m for m in models if m and not (m in seen or seen.add(m))]:
         key = f"huggingface:{model}"
         if not _available(key): continue
+        attempted = True
         try:
             local["api_provider"] = "huggingface"
             reply = provider_chat(token, local, system_prompt, prompt, image_path=image_path, model=model)
+            if not reply: raise RuntimeError("Hugging Face returned an empty response")
             _mark_success(key); learn_online_response(prompt, reply, settings); return reply
         except Exception as e:
             _mark_failure(key, e); print("ONLINE AI HUGGING FACE FAILED:", model, e)
-    return None
+    if not attempted:
+        raise RuntimeError("Hugging Face models are temporarily cooling down after previous failures")
+    raise RuntimeError("Hugging Face request failed for all available models")
 
 
 def ask_online(prompt, settings=None, knowledge="", image_path=None):
@@ -143,22 +164,8 @@ def ask_online(prompt, settings=None, knowledge="", image_path=None):
         match = re.search(r"\[Attached Image:\s*([^\]]+)\]", prompt)
         if match: image_path = match.group(1).strip()
     selected = provider_name(settings)
-    providers = [selected]
-    # If the selected provider is unavailable, automatically use a configured
-    # server-level provider instead of immediately dropping to the local brain.
-    if selected == "huggingface":
-        if os.getenv("GEMINI_API_KEY", "").strip(): providers.append("google")
-        if os.getenv("OPENAI_API_KEY", "").strip(): providers.append("openai")
-    elif selected == "google" and os.getenv("OPENAI_API_KEY", "").strip(): providers.append("openai")
-    elif selected == "openai" and os.getenv("GEMINI_API_KEY", "").strip(): providers.append("google")
-    seen = set()
-    for provider in providers:
-        if provider in seen: continue
-        seen.add(provider)
-        try:
-            reply = _ask_provider(prompt, settings, knowledge, image_path, provider)
-            if reply: return reply
-        except Exception as e:
-            print("ONLINE AI PROVIDER FAILED:", provider, e)
-    print("ONLINE AI: all configured online providers failed; using local fallback")
-    return None
+    try:
+        return _ask_provider(prompt, settings, knowledge, image_path, selected)
+    except Exception as e:
+        print("ONLINE AI FAILED FOR SELECTED AI:", selected, e)
+        return None
