@@ -23,9 +23,12 @@ async function boot(){
 async function loadSelectedChat(chatId){
  const result=await apiPost('/api/chats/open',{conversation_id:chatId});
  if(!result||result.ok===false)throw Error(result?.error||'Could not open conversation');
- const data=result.data||result;
- $('chat').innerHTML='';
- (data.conversation||result.conversation||[]).forEach(loadConversationEntry);
+ const data=result.data||{};
+ const conversation=Array.isArray(data.conversation)?data.conversation:(Array.isArray(result.conversation)?result.conversation:[]);
+ const chat=document.getElementById('chat');
+ if(!chat)throw Error('Chat element not found');
+ chat.innerHTML='';
+ conversation.forEach(loadConversationEntry);
  sessionStorage.setItem('selectedConversation',JSON.stringify({conversation_id:chatId,data:data}));
 }
 
