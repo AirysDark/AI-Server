@@ -1,0 +1,16 @@
+{
+  "name": "AI",
+  "renderer": "cartoon",
+  "resolution": [320, 480],
+  "animations": [
+    "idle",
+    "thinking",
+    "talking",
+    "happy",
+    "sad",
+    "angry",
+    "surprised",
+    "sleepy",
+    "offline"
+  ]
+}
