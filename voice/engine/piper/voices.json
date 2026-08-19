@@ -12,6 +12,7 @@
     {"id":"en_US-arctic-medium:fem","name":"Arctic Female","gender":"female","language":"English (US)","quality":"medium","speaker":"fem"},
     {"id":"en_GB-semaine-medium:poppy","name":"Poppy","gender":"female","language":"English (UK)","quality":"medium","speaker":"poppy"},
     {"id":"en_GB-vctk-medium:p225","name":"VCTK Female","gender":"female","language":"English (UK)","quality":"medium","speaker":"p225"},
+    {"id":"es_MX-ald-medium","name":"Ald","gender":"female","language":"Spanish (Mexico)","quality":"medium","accent":"Mexican Spanish"},
     {"id":"en_US-joe-medium","name":"Joe","gender":"male","language":"English (US)","quality":"medium"},
     {"id":"en_US-danny-low","name":"Danny","gender":"male","language":"English (US)","quality":"low"},
     {"id":"en_US-ryan-medium","name":"Ryan","gender":"male","language":"English (US)","quality":"medium"},
