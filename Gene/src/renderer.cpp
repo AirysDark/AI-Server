@@ -167,10 +167,6 @@ void Renderer::drawTexturedTriangle(const Vertex& a, const Vertex& b, const Vert
     const float area = edge(p[0].x,p[0].y,p[1].x,p[1].y,p[2].x,p[2].y);
     if (std::fabs(area) < 0.00001f) return;
 
-    // PMX Material::IsDoubleSided (0x01). Babylon-MMD leaves back-face
-    // culling enabled for ordinary materials and disables it for this flag.
-    // The framebuffer has a downward Y axis, so a front-facing CCW triangle
-    // has a negative 2D signed area after projection.
     const bool doubleSided = (material.flags & 0x01u) != 0;
     if (!doubleSided && area >= 0.0f) return;
 
@@ -302,7 +298,6 @@ void Renderer::draw(const Model& model)
         const TextureInfo* tex=nullptr;
         if (mat.textureIndex>=0&&size_t(mat.textureIndex)<_textures.size()&&_textures[mat.textureIndex].loaded()) tex=&_textures[mat.textureIndex];
         for (size_t j=0;j+2<count;j+=3) {
-            // PMX/Babylon-MMD reverses the winding while building Babylon geometry.
             const uint32_t ia=idx[offset+j], ib=idx[offset+j+2], ic=idx[offset+j+1];
             if (ia<skinned.size()&&ib<skinned.size()&&ic<skinned.size()) drawTexturedTriangle(skinned[ia],skinned[ib],skinned[ic],mat,tex);
         }
@@ -339,7 +334,7 @@ void Renderer::present()
     HDC dc=GetDC(hwnd);
     if (dc) {
         const int w=int(_bufferWidth), h=int(_bufferHeight);
-        if (w>0&&h>0) BitBlt(dc,0,0,w,h,static_cast<HDC>(_backBufferDC),0,0,w,h,SRCCOPY);
+        if (w>0&&h>0) BitBlt(dc,0,0,w,h,static_cast<HDC>(_backBufferDC),0,0,SRCCOPY);
         ReleaseDC(hwnd,dc);
     }
 }
