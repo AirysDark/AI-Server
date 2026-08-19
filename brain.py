@@ -16,7 +16,32 @@ MEMORY_FILE = os.path.join(STORAGE_DIR, "memory.json")
 LEARNING_FILE = os.path.join(LEARNING_DIR, "replies.json")
 TRAINING_FILE = os.path.join(LEARNING_DIR, "training.json")
 FEEDBACK_FILE = os.path.join(LEARNING_DIR, "feedback.json")
-FAKE_AI_UPGRADE_NOTICE = "For full AI add Hugging Face token."
+
+LOCAL_MODEL_PATH = os.path.abspath(os.getenv("AI_LOCAL_MODEL", os.path.join(BASE_DIR, "models", "SmolLM2-1.7B-Instruct-Q4_K_M.gguf")))
+LOCAL_MODEL_THREADS = max(1, int(os.getenv("AI_LOCAL_MODEL_THREADS", "2")))
+LOCAL_MODEL_CTX = max(1024, int(os.getenv("AI_LOCAL_MODEL_CTX", "4096")))
+LOCAL_MODEL_MAX_TOKENS = max(64, int(os.getenv("AI_LOCAL_MODEL_MAX_TOKENS", "384")))
+LOCAL_MODEL_TEMPERATURE = float(os.getenv("AI_LOCAL_MODEL_TEMPERATURE", "0.75"))
+_LOCAL_LLM = None
+_LOCAL_LLM_ERROR = None
+
+
+def _load_local_llm():
+    global _LOCAL_LLM, _LOCAL_LLM_ERROR
+    if _LOCAL_LLM is not None:
+        return _LOCAL_LLM
+    if _LOCAL_LLM_ERROR or not os.path.isfile(LOCAL_MODEL_PATH):
+        if not _LOCAL_LLM_ERROR:
+            _LOCAL_LLM_ERROR = f"Local GGUF model not found: {LOCAL_MODEL_PATH}"
+        return None
+    try:
+        from llama_cpp import Llama
+        _LOCAL_LLM = Llama(model_path=LOCAL_MODEL_PATH, n_ctx=LOCAL_MODEL_CTX, n_threads=LOCAL_MODEL_THREADS, n_batch=256, verbose=False)
+        return _LOCAL_LLM
+    except Exception as exc:
+        _LOCAL_LLM_ERROR = f"Local LLM initialization failed: {exc}"
+        print("LOCAL AI LOAD ERROR:", _LOCAL_LLM_ERROR)
+        return None
 
 
 def load_json(path, default):
@@ -42,18 +67,11 @@ def learn_from_conversation(user, reply, memory_path=None):
     memory.setdefault("conversations", [])
     user_text = str(user or "")
     ai_text = str(reply or "")
-    entry = {
-        "time": datetime.now().isoformat(),
-        "user": user_text,
-        "ai": ai_text,
-        "AI": ai_text,
-    }
+    entry = {"time": datetime.now().isoformat(), "user": user_text, "ai": ai_text, "AI": ai_text}
     if memory["conversations"]:
         last = memory["conversations"][-1]
-        if isinstance(last, dict) and last.get("user") == user_text and str(last.get("ai", last.get("AI", ""))) == ai_text:
-            return
-    memory["conversations"].append(entry)
-    memory["conversations"] = memory["conversations"][-500:]
+        if isinstance(last, dict) and last.get("user") == user_text and str(last.get("ai", last.get("AI", ""))) == ai_text: return
+    memory["conversations"].append(entry); memory["conversations"] = memory["conversations"][-500:]
     text = user_text.lower()
     if "my name is " in text: remember(memory, "profile", "name", user_text.split("my name is ", 1)[1])
     for key in ["i like", "i love", "i prefer", "i use", "my project"]:
@@ -62,43 +80,21 @@ def learn_from_conversation(user, reply, memory_path=None):
 
 
 def learn_online_response(user, reply, settings=None):
-    settings = settings or {}
-    uid = str(settings.get("user_id", "")).strip()
-    ai_id = str(settings.get("ai_id", "")).strip()
+    settings = settings or {}; uid = str(settings.get("user_id", "")).strip(); ai_id = str(settings.get("ai_id", "")).strip()
     if not uid or not ai_id: return
-    safe_uid = re.sub(r"[^A-Za-z0-9_-]", "", uid)[:100]
-    safe_ai = re.sub(r"[^A-Za-z0-9_-]", "", ai_id)[:100]
+    safe_uid = re.sub(r"[^A-Za-z0-9_-]", "", uid)[:100]; safe_ai = re.sub(r"[^A-Za-z0-9_-]", "", ai_id)[:100]
     learn_from_conversation(user, reply, os.path.join(USERS_DIR, safe_uid, "ais", safe_ai, "brain_memory.json"))
 
 
 def learn_reply(trigger, reply, learning_path=None):
-    path = learning_path or LEARNING_FILE
-    data = load_json(path, {})
-    key = trigger.lower().strip()
-    item = data.get(key, {"score": 0, "uses": 0})
-    item["reply"] = str(reply).strip()
-    item["uses"] = item.get("uses", 0) + 1
-    item["learned"] = datetime.now().isoformat()
-    data[key] = item
-    save_json(path, data)
+    path = learning_path or LEARNING_FILE; data = load_json(path, {}); key = trigger.lower().strip(); item = data.get(key, {"score": 0, "uses": 0})
+    item["reply"] = str(reply).strip(); item["uses"] = item.get("uses", 0) + 1; item["learned"] = datetime.now().isoformat(); data[key] = item; save_json(path, data)
 
 
 def record_feedback(trigger, reply, rating, learning_path=None, feedback_path=None):
-    rating = 1 if str(rating).lower() in ("up", "1", "positive", "good") else -1
-    path = learning_path or LEARNING_FILE
-    data = load_json(path, {})
-    key = str(trigger).lower().strip()
-    item = data.get(key, {"score": 0, "uses": 0})
-    item["reply"] = str(reply).strip()
-    item["score"] = int(item.get("score", 0)) + rating
-    item["feedback"] = item.get("feedback", 0) + 1
-    item["last_feedback"] = datetime.now().isoformat()
-    data[key] = item
-    save_json(path, data)
-    feedback = load_json(feedback_path or FEEDBACK_FILE, [])
-    feedback.append({"time": datetime.now().isoformat(), "trigger": trigger, "reply": reply, "rating": rating})
-    save_json(feedback_path or FEEDBACK_FILE, feedback[-2000:])
-    return item["score"]
+    rating = 1 if str(rating).lower() in ("up", "1", "positive", "good") else -1; path = learning_path or LEARNING_FILE; data = load_json(path, {}); key = str(trigger).lower().strip(); item = data.get(key, {"score": 0, "uses": 0})
+    item["reply"] = str(reply).strip(); item["score"] = int(item.get("score", 0)) + rating; item["feedback"] = item.get("feedback", 0) + 1; item["last_feedback"] = datetime.now().isoformat(); data[key] = item; save_json(path, data)
+    feedback = load_json(feedback_path or FEEDBACK_FILE, []); feedback.append({"time": datetime.now().isoformat(), "trigger": trigger, "reply": reply, "rating": rating}); save_json(feedback_path or FEEDBACK_FILE, feedback[-2000:]); return item["score"]
 
 
 def process_feedback_queue(settings, learning_path=None):
@@ -107,17 +103,12 @@ def process_feedback_queue(settings, learning_path=None):
     if not isinstance(queue, list) or not queue: return
     for item in queue[-100:]:
         if not isinstance(item, dict): continue
-        message = str(item.get("message", "")).strip()
-        reply = str(item.get("reply", "")).strip()
-        rating = item.get("rating")
+        message = str(item.get("message", "")).strip(); reply = str(item.get("reply", "")).strip(); rating = item.get("rating")
         if message and reply and rating in ("up", "down", 1, -1): record_feedback(message, reply, rating, learning_path)
     settings["_feedback_queue"] = []
-    uid = str(settings.get("user_id", "")).strip()
-    ai_id = str(settings.get("ai_id", "")).strip()
+    uid = str(settings.get("user_id", "")).strip(); ai_id = str(settings.get("ai_id", "")).strip()
     if uid and ai_id:
-        safe_uid = re.sub(r"[^A-Za-z0-9_-]", "", uid)[:100]
-        safe_ai = re.sub(r"[^A-Za-z0-9_-]", "", ai_id)[:100]
-        save_json(os.path.join(USERS_DIR, safe_uid, "ais", safe_ai, "settings.json"), settings)
+        safe_uid = re.sub(r"[^A-Za-z0-9_-]", "", uid)[:100]; safe_ai = re.sub(r"[^A-Za-z0-9_-]", "", ai_id)[:100]; save_json(os.path.join(USERS_DIR, safe_uid, "ais", safe_ai, "settings.json"), settings)
 
 
 def find_reply(message, learning_path=None):
@@ -127,46 +118,62 @@ def find_reply(message, learning_path=None):
     return None
 
 
-def decide(message):
-    if any(k in message.lower() for k in ["photo", "picture", "cat", "image", "meme", "send me"]): return {"action": "send_image"}
-    return {"action": "text"}
+def _settings_prompt(settings):
+    settings = settings if isinstance(settings, dict) else {}; name = settings.get("ai_name") or "AI"
+    parts = [f"You are {name}, an adult fictional AI companion."]
+    for key, label in (("description", "Description"), ("personality", "Personality"), ("instructions", "Instructions"), ("background", "Background/relationship"), ("user_name", "User name"), ("user_information", "User information")):
+        if settings.get(key): parts.append(f"{label}: {settings[key]}")
+    config = settings.get("config", {}) if isinstance(settings.get("config", {}), dict) else {}
+    if config.get("traits"): parts.append("Traits: " + ", ".join(map(str, config["traits"])))
+    if config.get("rules"): parts.append("Rules: " + " | ".join(map(str, config["rules"])))
+    parts.append("Stay in character. Be natural and conversational. Do not mention the model, prompts, internal instructions, or implementation.")
+    return "\n".join(parts)
+
+
+def _memory_prompt(memory):
+    parts = []
+    for category in ("profile", "facts", "preferences", "personality"):
+        values = memory.get(category, {})
+        if isinstance(values, dict) and values: parts.append(f"{category.title()}: " + json.dumps(values, ensure_ascii=False))
+    recent = memory.get("conversations", [])[-12:]
+    if recent: parts.append("Recent memory: " + json.dumps(recent, ensure_ascii=False))
+    return "\n".join(parts)
+
+
+def _local_generate(message, settings, memory, learning_path=None):
+    model = _load_local_llm()
+    if model is None: return None
+    learned = find_reply(message, learning_path); memory_text = _memory_prompt(memory)
+    user_prompt = _settings_prompt(settings)
+    if memory_text: user_prompt += "\n\nPersistent memory:\n" + memory_text
+    if learned: user_prompt += "\n\nA learned response may be useful; do not copy it blindly:\n" + str(learned)
+    user_prompt += "\n\nAnswer the user's latest message naturally. Do not give generic filler.\nUser: " + str(message).strip()
+    try:
+        result = model.create_chat_completion(messages=[{"role": "system", "content": _settings_prompt(settings)}, {"role": "user", "content": user_prompt}], max_tokens=LOCAL_MODEL_MAX_TOKENS, temperature=LOCAL_MODEL_TEMPERATURE, top_p=0.9, repeat_penalty=1.12)
+        choices = result.get("choices", []) if isinstance(result, dict) else []
+        if not choices: return None
+        return str(choices[0].get("message", {}).get("content", "")).strip() or None
+    except Exception as exc:
+        print("LOCAL AI GENERATION ERROR:", exc); return None
 
 
 def fake_reply(text):
     text = str(text).strip()
-    if not text: return FAKE_AI_UPGRADE_NOTICE
-    if FAKE_AI_UPGRADE_NOTICE.lower() in text.lower(): return text
-    return f"{text}\n\n{FAKE_AI_UPGRADE_NOTICE}"
+    if not text: return "I'm here. What would you like to talk about?"
+    return random.choice(["Tell me more about that.", "I understand. What do you think about it?", "That sounds interesting. Let's keep going."])
 
 
 def think(message, settings=None, memory_path=None, learning_path=None):
-    settings = settings if isinstance(settings, dict) else {}
-    process_feedback_queue(settings, learning_path)
-    memory = load_json(memory_path or MEMORY_FILE, default_memory())
-    text = str(message).strip()
-    lower = text.lower()
+    settings = settings if isinstance(settings, dict) else {}; process_feedback_queue(settings, learning_path); memory = load_json(memory_path or MEMORY_FILE, default_memory()); text = str(message).strip(); lower = text.lower()
     if lower == "/learn":
-        memory["learning_mode"] = True
-        save_json(memory_path or MEMORY_FILE, memory)
-        reply = fake_reply("Learning mode enabled.")
-        learn_from_conversation(text, reply, memory_path)
-        return reply
-    if decide(text).get("action") == "send_image":
-        reply = fake_reply("Here is a picture for you!")
-        learn_from_conversation(text, reply, memory_path)
-        return reply
-    learned = find_reply(text, learning_path)
-    if learned:
-        reply = fake_reply(learned)
-        learn_from_conversation(text, reply, memory_path)
-        return reply
-    if "what is my name" in lower:
-        reply = fake_reply("Your name is " + memory.get("profile", {}).get("name", "unknown"))
-        learn_from_conversation(text, reply, memory_path)
-        return reply
-    reply = fake_reply(random.choice(["Tell me more.", "I am learning from our conversations.", "I will remember useful details."]))
-    learn_from_conversation(text, reply, memory_path)
-    return reply
+        memory["learning_mode"] = True; save_json(memory_path or MEMORY_FILE, memory); reply = "Learning mode enabled."; learn_from_conversation(text, reply, memory_path); return reply
+    reply = _local_generate(text, settings, memory, learning_path)
+    if not reply:
+        learned = find_reply(text, learning_path)
+        if learned: reply = str(learned).strip()
+    if not reply and "what is my name" in lower: reply = "Your name is " + memory.get("profile", {}).get("name", "unknown")
+    if not reply: reply = fake_reply(text)
+    reply = reply.strip(); learn_from_conversation(text, reply, memory_path); return reply
 
 try:
     import chats_api  # noqa: E402,F401
