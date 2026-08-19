@@ -124,6 +124,13 @@ def _token(settings, provider):
             or settings.get("hf_token")
             or ""
         ).strip()
+    if provider == "openrouter":
+        return str(
+            settings.get("openrouter_token")
+            or settings.get("api_token")
+            or settings.get("openai_token")
+            or ""
+        ).strip()
     if provider == "openai":
         return str(
             settings.get("openai_token")
@@ -160,6 +167,17 @@ def _ask_provider(prompt, settings, knowledge, image_path, provider):
                 _mark_failure(key, e); errors.append(f"{model}: {str(e)[:300]}"); print("ONLINE AI GOOGLE FAILED:", model, e)
         detail = "; ".join(errors) if errors else "all available models are cooling down after previous failures"
         raise RuntimeError(f"Google AI Studio request failed: {detail}")
+    if provider == "openrouter":
+        model = str(local.get("api_model") or "").strip() or "openrouter/free"
+        key = _health_key("openrouter", f"{local.get('api_endpoint') or 'default'}:{model}", token)
+        if not _available(key):
+            raise RuntimeError("OpenRouter provider is temporarily cooling down after a previous failure")
+        try:
+            reply = _api_call(key, lambda: provider_chat(token, local, system_prompt, prompt, image_path=image_path, model=model))
+            if not reply: raise RuntimeError("OpenRouter returned an empty response")
+            _mark_success(key); learn_online_response(prompt, reply, settings); return reply
+        except Exception as e:
+            _mark_failure(key, e); print("ONLINE AI OPENROUTER FAILED:", e); raise RuntimeError(f"OpenRouter request failed: {str(e)[:500]}") from e
     if provider == "openai":
         model = str(local.get("api_model") or "").strip() or "gpt-4o-mini"
         key = _health_key("openai", f"{local.get('api_endpoint') or 'default'}:{model}", token)
