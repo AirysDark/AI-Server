@@ -36,7 +36,7 @@ def save_archived_conversation(uid,ai_id,conversation_id,data):
     return data
 
 def blank_settings(uid,ai_id):
-    return {"user_id":uid,"ai_id":ai_id,"setup_complete":False,"ai_name":"","profile_photo":"","description":"","background":"","user_information":"","user_name":"","personality":"","instructions":"","config":{"traits":[],"rules":[]},"features":{"online_ai":True,"learning":True,"long_term_memory":True,"relevant_memory":True,"automatic_images":False,"proactive_images":False},"proactive":{"enabled":False}}
+    return {"user_id":uid,"ai_id":ai_id,"setup_complete":False,"ai_name":"","profile_photo":"","description":"","background":"","user_information":"","user_name":"","personality":"","instructions":"","api_provider":"huggingface","hf_token":"","api_endpoint":"","api_model":"","config":{"traits":[],"rules":[]},"features":{"online_ai":True,"learning":True,"long_term_memory":True,"relevant_memory":True,"automatic_images":False,"proactive_images":False},"proactive":{"enabled":False}}
 def load_settings(uid,ai_id):
     data=load_json(settings_file(uid,ai_id),blank_settings(uid,ai_id)); return data if isinstance(data,dict) else blank_settings(uid,ai_id)
 def save_settings(uid,ai_id,data): os.makedirs(ai_root(uid,ai_id),exist_ok=True); save_json(settings_file(uid,ai_id),data)
