@@ -11,6 +11,8 @@ from core.stage5_profile_bridge import apply as _apply_stage5
 _apply_stage3();_apply_stage4();_apply_stage5()
 import chats_api
 chats_api.install_handler_routes(AIHandler,__import__("core.server_impl",fromlist=["AIHandler"]))
+from core.multi_chat_bridge import install_handler_routes as _install_multi_chat_routes
+_install_multi_chat_routes(AIHandler)
 from core.admin_bridge import install_handler_routes as _install_admin_routes
 _install_admin_routes(AIHandler)
 PORT=__import__("core.config",fromlist=["PORT"]).PORT
