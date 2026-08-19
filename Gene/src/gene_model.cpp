@@ -108,8 +108,6 @@ bool Model::loadPmx(const std::string& path)
         case 3:
             if (!r.index(idx, boneIndexSize, true) || !r.index(idx, boneIndexSize, true)) return fail("bad SDEF bones at vertex " + std::to_string(vi));
             // PMX SDEF payload: weight + C(3) + R0(3) + R1(3) = 10 floats.
-            // The previous loader consumed only 9, shifting the stream and producing
-            // bogus weight types such as 132 on subsequent vertices.
             for (int n = 0; n < 10; ++n) if (!r.f32(f)) return fail("bad SDEF data at vertex " + std::to_string(vi));
             break;
         default:
@@ -155,28 +153,62 @@ bool Model::loadPmx(const std::string& path)
     if (!r.u32(morphCount) || morphCount > 1000000) return fail("invalid morph count");
     _morphs.reserve(morphCount);
     for (uint32_t i = 0; i < morphCount; ++i) {
-        Morph m{}; if (!r.text(m.name, encoding) || !r.text(m.englishName, encoding)) return fail("failed morph name " + std::to_string(i));
-        uint8_t panel{}, type{}; if (!r.u8(panel) || !r.u8(type) || !r.u32(m.offsetCount)) return fail("failed morph header " + std::to_string(i)); m.panel = panel; m.type = type;
+        Morph m{};
+        if (!r.text(m.name, encoding) || !r.text(m.englishName, encoding)) return fail("failed morph name " + std::to_string(i));
+        uint8_t panel{}, type{};
+        if (!r.u8(panel) || !r.u8(type) || !r.u32(m.offsetCount)) return fail("failed morph header " + std::to_string(i));
+        m.panel = panel;
+        m.type = type;
         for (uint32_t j = 0; j < m.offsetCount; ++j) {
             float f{}; int32_t idx{};
             switch (type) {
-            case 0: if (!r.index(idx, morphIndexSize, true) || !r.f32(f)) return fail("bad group morph " + std::to_string(i)); break;
-            case 1: if (!r.index(idx, vertexIndexSize, true)) return fail("bad vertex morph index " + std::to_string(i)); for (int n = 0; n < 3; ++n) if (!r.f32(f)) return fail("bad vertex morph data " + std::to_string(i)); break;
-            case 2: if (!r.index(idx, boneIndexSize, true)) return fail("bad bone morph index " + std::to_string(i)); for (int n = 0; n < 7; ++n) if (!r.f32(f)) return fail("bad bone morph data " + std::to_string(i)); break;
-            case 3: case 4: case 5: case 6: case 7: if (!r.index(idx, vertexIndexSize, true)) return fail("bad UV morph index " + std::to_string(i)); for (int n = 0; n < 4; ++n) if (!r.f32(f)) return fail("bad UV morph data " + std::to_string(i)); break;
-            case 8: if (!r.index(idx, materialIndexSize, true)) return fail("bad material morph index " + std::to_string(i)); for (int n = 0; n < 28; ++n) if (!r.f32(f)) return fail("bad material morph data " + std::to_string(i)); break;
-            case 9: if (!r.index(idx, morphIndexSize, true) || !r.f32(f)) return fail("bad flip morph " + std::to_string(i)); break;
-            case 10: if (!r.index(idx, boneIndexSize, true)) return fail("bad impulse morph index " + std::to_string(i)); for (int n = 0; n < 6; ++n) if (!r.f32(f)) return fail("bad impulse morph data " + std::to_string(i)); break;
-            default: return fail("unsupported morph type " + std::to_string(type) + " at morph " + std::to_string(i));
+            case 0:
+                if (!r.index(idx, morphIndexSize, true) || !r.f32(f)) return fail("bad group morph " + std::to_string(i));
+                break;
+            case 1:
+                if (!r.index(idx, vertexIndexSize, true)) return fail("bad vertex morph index " + std::to_string(i));
+                for (int n = 0; n < 3; ++n) if (!r.f32(f)) return fail("bad vertex morph data " + std::to_string(i));
+                break;
+            case 2:
+                if (!r.index(idx, boneIndexSize, true)) return fail("bad bone morph index " + std::to_string(i));
+                for (int n = 0; n < 7; ++n) if (!r.f32(f)) return fail("bad bone morph data " + std::to_string(i));
+                break;
+            case 3: case 4: case 5: case 6: case 7:
+                if (!r.index(idx, vertexIndexSize, true)) return fail("bad UV morph index " + std::to_string(i));
+                for (int n = 0; n < 4; ++n) if (!r.f32(f)) return fail("bad UV morph data " + std::to_string(i));
+                break;
+            case 8:
+                if (!r.index(idx, materialIndexSize, true)) return fail("bad material morph index " + std::to_string(i));
+                for (int n = 0; n < 28; ++n) if (!r.f32(f)) return fail("bad material morph data " + std::to_string(i));
+                break;
+            case 9:
+                if (!r.index(idx, morphIndexSize, true) || !r.f32(f)) return fail("bad flip morph " + std::to_string(i));
+                break;
+            case 10: {
+                // PMX 2.0/2.1 impulse morph offset:
+                // bone index, local/global byte, velocity(3), torque(3).
+                if (!r.index(idx, boneIndexSize, true)) return fail("bad impulse morph index " + std::to_string(i));
+                uint8_t localFlag{};
+                if (!r.u8(localFlag)) return fail("bad impulse morph local flag " + std::to_string(i));
+                for (int n = 0; n < 6; ++n) if (!r.f32(f)) return fail("bad impulse morph data " + std::to_string(i));
+                break;
+            }
+            default:
+                return fail("unsupported morph type " + std::to_string(type) + " at morph " + std::to_string(i));
             }
         }
         _morphs.push_back(std::move(m));
     }
 
-    uint32_t boneCount{}; if (!r.u32(boneCount) || boneCount > 1000000) return fail("invalid bone count"); _bones.reserve(boneCount);
+    uint32_t boneCount{};
+    if (!r.u32(boneCount) || boneCount > 1000000) return fail("invalid bone count");
+    _bones.reserve(boneCount);
     for (uint32_t i = 0; i < boneCount; ++i) {
-        Bone b{}; if (!r.text(b.name, encoding) || !r.text(b.englishName, encoding) || !r.vec3(b.position.x, b.position.y, b.position.z) || !r.index(b.parent, boneIndexSize, true)) return fail("failed bone header " + std::to_string(i));
-        uint16_t flags{}; if (!r.u16(flags)) return fail("failed bone flags " + std::to_string(i)); int32_t idx{}; float f{};
+        Bone b{};
+        if (!r.text(b.name, encoding) || !r.text(b.englishName, encoding) || !r.vec3(b.position.x, b.position.y, b.position.z) || !r.index(b.parent, boneIndexSize, true)) return fail("failed bone header " + std::to_string(i));
+        uint16_t flags{};
+        if (!r.u16(flags)) return fail("failed bone flags " + std::to_string(i));
+        int32_t idx{}; float f{};
         if (flags & 0x0001) { if (!r.index(idx, boneIndexSize, true)) return fail("bad bone tail index " + std::to_string(i)); }
         else { for (int n = 0; n < 3; ++n) if (!r.f32(f)) return fail("bad bone tail position " + std::to_string(i)); }
         if (flags & (0x0100 | 0x0200)) { if (!r.index(idx, boneIndexSize, true) || !r.f32(f)) return fail("bad bone inherit data " + std::to_string(i)); }
