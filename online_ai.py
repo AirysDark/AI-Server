@@ -82,16 +82,21 @@ Maintain continuity with the conversation and use the supplied profile naturally
 
 
 def _token(settings, provider):
-    """Return ONLY the credential configured for this specific AI.
+    """Return the credential stored on this specific AI.
 
-    No server-wide environment token is used here.  Solo Chat and Multi Chat
-    therefore cannot silently use another AI's credential.
+    The settings page stores the provider token in ``hf_token`` regardless of
+    whether the selected provider is Hugging Face, Google, or OpenAI. Older
+    settings may also contain provider-specific legacy fields, so those remain
+    accepted as a compatibility fallback. No server-wide token is used.
     """
-    if provider == "huggingface":
-        return str(settings.get("hf_token", "")).strip()
+    token = str(settings.get("hf_token", "")).strip()
+    if token:
+        return token
     if provider == "google":
         return str(settings.get("api_token", "") or settings.get("google_token", "") or settings.get("gemini_api_key", "")).strip()
-    return str(settings.get("api_token", "") or settings.get("openai_token", "")).strip()
+    if provider == "openai":
+        return str(settings.get("api_token", "") or settings.get("openai_token", "")).strip()
+    return ""
 
 
 def _ask_provider(prompt, settings, knowledge, image_path, provider):
@@ -124,7 +129,7 @@ def _ask_provider(prompt, settings, knowledge, image_path, provider):
             model = "gpt-4o-mini"
         key = f"openai:{local.get('api_endpoint') or 'default'}:{model}"
         if not _available(key):
-            raise RuntimeError("OpenAI provider is temporarily cooling down after a previous failure")
+            raise RuntimeError("OpenAI provider is temporarily cooling down after previous failures")
         try:
             reply = provider_chat(token, local, system_prompt, prompt, image_path=image_path, model=model)
             if not reply: raise RuntimeError("OpenAI returned an empty response")
