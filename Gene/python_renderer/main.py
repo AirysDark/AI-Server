@@ -20,7 +20,7 @@ uniform sampler2D u_texture;uniform int u_has_texture;uniform vec4 u_material;un
 void main(){vec4 t=u_has_texture==1?texture(u_texture,v_uv):vec4(1.0);vec3 n=normalize(v_normal);float l=.40+.60*max(dot(n,normalize(u_light)),0.0);vec4 c=t*u_material*v_color;if(c.a<.003)discard;fragColor=vec4(c.rgb*l,c.a);}"""
 
 def perspective(fov,aspect,near,far):
-    f=1/math.tan(math.radians(fov)/2);m=np.zeros((4,4),np.float32);m[0,0]=f/aspect;m[1,1]=f;m[2,2]=(far+near)/(near-far);m[2,3]=2*far*near/(near-far);m[3,2]=-1;return m
+    f=1/math.tan(math.radians(fov)/2);m=np.zeros((4,4),dtype=np.float32);m[0,0]=f/aspect;m[1,1]=f;m[2,2]=(far+near)/(near-far);m[2,3]=2*far*near/(near-far);m[3,2]=-1;return m
 
 def look_at(eye,target,up=(0,1,0)):
     eye=np.asarray(eye,np.float32);target=np.asarray(target,np.float32);up=np.asarray(up,np.float32);f=target-eye;f/=np.linalg.norm(f) or 1;s=np.cross(f,up);s/=np.linalg.norm(s) or 1;u=np.cross(s,f);m=np.eye(4,dtype=np.float32);m[0,:3],m[1,:3],m[2,:3]=s,u,-f;m[:3,3]=-m[:3,:3]@eye;return m
@@ -51,7 +51,7 @@ class MaterialBatch:
 
 class GeneWindow(pyglet.window.Window):
     def __init__(self,path):
-        super().__init__(1280,800,"Gene Python MMD Renderer",resizable=True,vsync=True);self.program=ShaderProgram(Shader(VERTEX,"vertex"),Shader(FRAGMENT,"fragment"));self.model=np.eye(4,np.float32);self.yaw=0;self.pitch=math.radians(8);self.distance=35;self.target=np.array([0,10,0],np.float32);self.drag=False;self.batches=[];self.load(path)
+        super().__init__(width=1280,height=800,caption="Gene Python MMD Renderer",resizable=True,vsync=True);self.program=ShaderProgram(Shader(VERTEX,"vertex"),Shader(FRAGMENT,"fragment"));self.model=np.eye(4,dtype=np.float32);self.yaw=0;self.pitch=math.radians(8);self.distance=35;self.target=np.array([0,10,0],np.float32);self.drag=False;self.batches=[];self.load(path)
     def load(self,path):
         print("========================================\n Gene Python MMD Renderer\n========================================\nPMX:",path);m=pmx_reader.read_from_file(str(path));v=m.vertices;idx=[int(x) for x in m.indices];mats=m.materials;tex=field(m,"textures",default=[])
         print("PMX loaded successfully.\nVersion:",m.version,"\nVertices:",len(v),"\nIndices:",len(idx),"\nMaterials:",len(mats),"\nTextures:",len(tex),"\nBones:",len(m.bones),"\nMorphs:",len(m.morphs))
