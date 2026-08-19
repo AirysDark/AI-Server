@@ -94,100 +94,111 @@ bool Model::loadPmx(const std::string& path)
         uint8_t weight{}; int32_t idx{};
         if (!r.u8(weight)) return fail("failed weight type at vertex " + std::to_string(vi));
         switch (weight) {
-        case 0: if (!r.index(idx, boneIndexSize, true)) return fail("bad BDEF1 at vertex " + std::to_string(vi)); break;
-        case 1: if (!r.index(idx,boneIndexSize,true) || !r.index(idx,boneIndexSize,true) || !r.f32(f)) return fail("bad BDEF2 at vertex " + std::to_string(vi)); break;
-        case 2: case 4:
-            for (int n=0;n<4;++n) if(!r.index(idx,boneIndexSize,true)) return fail("bad BDEF4/QDEF index at vertex " + std::to_string(vi));
-            for (int n=0;n<4;++n) if(!r.f32(f)) return fail("bad BDEF4/QDEF weights at vertex " + std::to_string(vi));
+        case 0:
+            if (!r.index(idx, boneIndexSize, true)) return fail("bad BDEF1 at vertex " + std::to_string(vi));
+            break;
+        case 1:
+            if (!r.index(idx, boneIndexSize, true) || !r.index(idx, boneIndexSize, true) || !r.f32(f)) return fail("bad BDEF2 at vertex " + std::to_string(vi));
+            break;
+        case 2:
+        case 4:
+            for (int n = 0; n < 4; ++n) if (!r.index(idx, boneIndexSize, true)) return fail("bad BDEF4/QDEF index at vertex " + std::to_string(vi));
+            for (int n = 0; n < 4; ++n) if (!r.f32(f)) return fail("bad BDEF4/QDEF weights at vertex " + std::to_string(vi));
             break;
         case 3:
-            if(!r.index(idx,boneIndexSize,true)||!r.index(idx,boneIndexSize,true)) return fail("bad SDEF bones at vertex " + std::to_string(vi));
-            for(int n=0;n<9;++n) if(!r.f32(f)) return fail("bad SDEF data at vertex " + std::to_string(vi));
+            if (!r.index(idx, boneIndexSize, true) || !r.index(idx, boneIndexSize, true)) return fail("bad SDEF bones at vertex " + std::to_string(vi));
+            // PMX SDEF payload: weight + C(3) + R0(3) + R1(3) = 10 floats.
+            // The previous loader consumed only 9, shifting the stream and producing
+            // bogus weight types such as 132 on subsequent vertices.
+            for (int n = 0; n < 10; ++n) if (!r.f32(f)) return fail("bad SDEF data at vertex " + std::to_string(vi));
             break;
-        default: return fail("unknown vertex weight type " + std::to_string(weight));
+        default:
+            return fail("unknown vertex weight type " + std::to_string(weight));
         }
         if (!r.f32(f)) return fail("failed edge scale at vertex " + std::to_string(vi));
     }
 
     if (!r.u32(_indexCount) || _indexCount > 30000000) return fail("invalid index count");
     _indices.resize(_indexCount);
-    for (uint32_t i=0;i<_indexCount;++i) { int32_t idx{}; if(!r.index(idx,vertexIndexSize,false)||idx<0||uint32_t(idx)>=vertexCount) return fail("invalid vertex index " + std::to_string(i)); _indices[i]=uint32_t(idx); }
+    for (uint32_t i = 0; i < _indexCount; ++i) { int32_t idx{}; if (!r.index(idx, vertexIndexSize, false) || idx < 0 || uint32_t(idx) >= vertexCount) return fail("invalid vertex index " + std::to_string(i)); _indices[i] = uint32_t(idx); }
 
     uint32_t textureCount{};
-    if(!r.u32(textureCount)||textureCount>1000000) return fail("invalid texture count");
+    if (!r.u32(textureCount) || textureCount > 1000000) return fail("invalid texture count");
     _textures.resize(textureCount);
-    for(uint32_t i=0;i<textureCount;++i) if(!r.text(_textures[i],encoding)) return fail("failed texture path " + std::to_string(i));
+    for (uint32_t i = 0; i < textureCount; ++i) if (!r.text(_textures[i], encoding)) return fail("failed texture path " + std::to_string(i));
 
     uint32_t materialCount{};
-    if(!r.u32(materialCount)||materialCount>1000000) return fail("invalid material count");
+    if (!r.u32(materialCount) || materialCount > 1000000) return fail("invalid material count");
     _materials.reserve(materialCount);
-    for(uint32_t i=0;i<materialCount;++i) {
+    for (uint32_t i = 0; i < materialCount; ++i) {
         Material m{}; float f{}; int32_t idx{};
-        if(!r.text(m.name,encoding)||!r.text(m.englishName,encoding)) return fail("failed material name " + std::to_string(i));
-        for(int n=0;n<4;++n)if(!r.f32(f));
-        for(int n=0;n<3;++n)if(!r.f32(f));
-        if(!r.f32(f))return fail("failed material specular power " + std::to_string(i));
-        for(int n=0;n<3;++n)if(!r.f32(f))return fail("failed material ambient " + std::to_string(i));
-        uint8_t flags{};if(!r.u8(flags))return fail("failed material flags " + std::to_string(i));
-        for(int n=0;n<4;++n)if(!r.f32(f))return fail("failed material edge colour " + std::to_string(i));
-        if(!r.f32(f))return fail("failed material edge size " + std::to_string(i));
-        if(!r.index(idx,textureIndexSize,true))return fail("failed material texture index " + std::to_string(i));m.textureIndex=idx;
-        if(!r.index(idx,textureIndexSize,true))return fail("failed material sphere texture index " + std::to_string(i));m.sphereTextureIndex=idx;
-        uint8_t sphereMode{};if(!r.u8(sphereMode))return fail("failed material sphere mode " + std::to_string(i));
-        uint8_t toonFlag{};if(!r.u8(toonFlag))return fail("failed material toon flag " + std::to_string(i));
-        if(toonFlag==0){if(!r.index(idx,textureIndexSize,true))return fail("failed material toon texture " + std::to_string(i));}
-        else{uint8_t toon{};if(!r.u8(toon))return fail("failed material toon index " + std::to_string(i));}
-        std::string memo;if(!r.text(memo,encoding))return fail("failed material memo " + std::to_string(i));
-        int32_t faces{};if(!r.i32(faces)||faces<0)return fail("invalid material face count " + std::to_string(i));m.indexCount=uint32_t(faces);
+        if (!r.text(m.name, encoding) || !r.text(m.englishName, encoding)) return fail("failed material name " + std::to_string(i));
+        for (int n = 0; n < 4; ++n) if (!r.f32(f)) return fail("failed material diffuse " + std::to_string(i));
+        for (int n = 0; n < 3; ++n) if (!r.f32(f)) return fail("failed material specular " + std::to_string(i));
+        if (!r.f32(f)) return fail("failed material specular power " + std::to_string(i));
+        for (int n = 0; n < 3; ++n) if (!r.f32(f)) return fail("failed material ambient " + std::to_string(i));
+        uint8_t flags{}; if (!r.u8(flags)) return fail("failed material flags " + std::to_string(i));
+        for (int n = 0; n < 4; ++n) if (!r.f32(f)) return fail("failed material edge colour " + std::to_string(i));
+        if (!r.f32(f)) return fail("failed material edge size " + std::to_string(i));
+        if (!r.index(idx, textureIndexSize, true)) return fail("failed material texture index " + std::to_string(i)); m.textureIndex = idx;
+        if (!r.index(idx, textureIndexSize, true)) return fail("failed material sphere texture index " + std::to_string(i)); m.sphereTextureIndex = idx;
+        uint8_t sphereMode{}; if (!r.u8(sphereMode)) return fail("failed material sphere mode " + std::to_string(i));
+        uint8_t toonFlag{}; if (!r.u8(toonFlag)) return fail("failed material toon flag " + std::to_string(i));
+        if (toonFlag == 0) { if (!r.index(idx, textureIndexSize, true)) return fail("failed material toon texture " + std::to_string(i)); }
+        else { uint8_t toon{}; if (!r.u8(toon)) return fail("failed material toon index " + std::to_string(i)); }
+        std::string memo; if (!r.text(memo, encoding)) return fail("failed material memo " + std::to_string(i));
+        int32_t faces{}; if (!r.i32(faces) || faces < 0) return fail("invalid material face count " + std::to_string(i)); m.indexCount = uint32_t(faces);
         _materials.push_back(std::move(m));
     }
 
     uint32_t morphCount{};
-    if(!r.u32(morphCount)||morphCount>1000000)return fail("invalid morph count");
+    if (!r.u32(morphCount) || morphCount > 1000000) return fail("invalid morph count");
     _morphs.reserve(morphCount);
-    for(uint32_t i=0;i<morphCount;++i) {
-        Morph m{};if(!r.text(m.name,encoding)||!r.text(m.englishName,encoding))return fail("failed morph name " + std::to_string(i));
-        uint8_t panel{},type{};if(!r.u8(panel)||!r.u8(type)||!r.u32(m.offsetCount))return fail("failed morph header " + std::to_string(i));m.panel=panel;m.type=type;
-        for(uint32_t j=0;j<m.offsetCount;++j){
-            float f{};int32_t idx{};
-            switch(type){
-            case 0: if(!r.index(idx,morphIndexSize,true)||!r.f32(f))return fail("bad group morph " + std::to_string(i));break;
-            case 1: if(!r.index(idx,vertexIndexSize,true))return fail("bad vertex morph index " + std::to_string(i));for(int n=0;n<3;++n)if(!r.f32(f))return fail("bad vertex morph data " + std::to_string(i));break;
-            case 2: if(!r.index(idx,boneIndexSize,true))return fail("bad bone morph index " + std::to_string(i));for(int n=0;n<7;++n)if(!r.f32(f))return fail("bad bone morph data " + std::to_string(i));break;
-            case 3:case 4:case 5:case 6:case 7: if(!r.index(idx,vertexIndexSize,true))return fail("bad UV morph index " + std::to_string(i));for(int n=0;n<4;++n)if(!r.f32(f))return fail("bad UV morph data " + std::to_string(i));break;
-            case 8:
-                // Material morph offset is: material index + 28 floats.
-                if(!r.index(idx,materialIndexSize,true))return fail("bad material morph index " + std::to_string(i));
-                for(int n=0;n<28;++n)if(!r.f32(f))return fail("bad material morph data " + std::to_string(i));
-                break;
-            case 9: if(!r.index(idx,morphIndexSize,true)||!r.f32(f))return fail("bad flip morph " + std::to_string(i));break;
-            case 10: if(!r.index(idx,boneIndexSize,true))return fail("bad impulse morph index " + std::to_string(i));for(int n=0;n<6;++n)if(!r.f32(f))return fail("bad impulse morph data " + std::to_string(i));break;
-            default:return fail("unsupported morph type " + std::to_string(type) + " at morph " + std::to_string(i));
+    for (uint32_t i = 0; i < morphCount; ++i) {
+        Morph m{}; if (!r.text(m.name, encoding) || !r.text(m.englishName, encoding)) return fail("failed morph name " + std::to_string(i));
+        uint8_t panel{}, type{}; if (!r.u8(panel) || !r.u8(type) || !r.u32(m.offsetCount)) return fail("failed morph header " + std::to_string(i)); m.panel = panel; m.type = type;
+        for (uint32_t j = 0; j < m.offsetCount; ++j) {
+            float f{}; int32_t idx{};
+            switch (type) {
+            case 0: if (!r.index(idx, morphIndexSize, true) || !r.f32(f)) return fail("bad group morph " + std::to_string(i)); break;
+            case 1: if (!r.index(idx, vertexIndexSize, true)) return fail("bad vertex morph index " + std::to_string(i)); for (int n = 0; n < 3; ++n) if (!r.f32(f)) return fail("bad vertex morph data " + std::to_string(i)); break;
+            case 2: if (!r.index(idx, boneIndexSize, true)) return fail("bad bone morph index " + std::to_string(i)); for (int n = 0; n < 7; ++n) if (!r.f32(f)) return fail("bad bone morph data " + std::to_string(i)); break;
+            case 3: case 4: case 5: case 6: case 7: if (!r.index(idx, vertexIndexSize, true)) return fail("bad UV morph index " + std::to_string(i)); for (int n = 0; n < 4; ++n) if (!r.f32(f)) return fail("bad UV morph data " + std::to_string(i)); break;
+            case 8: if (!r.index(idx, materialIndexSize, true)) return fail("bad material morph index " + std::to_string(i)); for (int n = 0; n < 28; ++n) if (!r.f32(f)) return fail("bad material morph data " + std::to_string(i)); break;
+            case 9: if (!r.index(idx, morphIndexSize, true) || !r.f32(f)) return fail("bad flip morph " + std::to_string(i)); break;
+            case 10: if (!r.index(idx, boneIndexSize, true)) return fail("bad impulse morph index " + std::to_string(i)); for (int n = 0; n < 6; ++n) if (!r.f32(f)) return fail("bad impulse morph data " + std::to_string(i)); break;
+            default: return fail("unsupported morph type " + std::to_string(type) + " at morph " + std::to_string(i));
             }
         }
         _morphs.push_back(std::move(m));
     }
 
-    uint32_t boneCount{};if(!r.u32(boneCount)||boneCount>1000000)return fail("invalid bone count");_bones.reserve(boneCount);
-    for(uint32_t i=0;i<boneCount;++i){
-        Bone b{};if(!r.text(b.name,encoding)||!r.text(b.englishName,encoding)||!r.vec3(b.position.x,b.position.y,b.position.z)||!r.index(b.parent,boneIndexSize,true))return fail("failed bone header " + std::to_string(i));
-        uint16_t flags{};if(!r.u16(flags))return fail("failed bone flags " + std::to_string(i));int32_t idx{};float f{};
-        if(flags&0x0001){if(!r.index(idx,boneIndexSize,true))return fail("bad bone tail index " + std::to_string(i));}else{for(int n=0;n<3;++n)if(!r.f32(f))return fail("bad bone tail position " + std::to_string(i));}
-        if(flags&(0x0100|0x0200)){if(!r.index(idx,boneIndexSize,true)||!r.f32(f))return fail("bad bone inherit data " + std::to_string(i));}
-        if(flags&0x0400)for(int n=0;n<3;++n)if(!r.f32(f))return fail("bad bone fixed axis " + std::to_string(i));
-        if(flags&0x0800)for(int n=0;n<6;++n)if(!r.f32(f))return fail("bad bone local axis " + std::to_string(i));
-        if(flags&0x2000){if(!r.i32(idx))return fail("bad external parent key " + std::to_string(i));}
-        if(flags&0x0020){
-            if(!r.index(idx,boneIndexSize,true))return fail("bad IK target " + std::to_string(i));
-            uint32_t loopCount{};if(!r.u32(loopCount)||loopCount>100000)return fail("invalid IK loop count on bone " + std::to_string(i));
-            if(!r.f32(f))return fail("bad IK loop angle " + std::to_string(i));
-            uint32_t linkCount{};if(!r.u32(linkCount)||linkCount>100000)return fail("invalid IK link count on bone " + std::to_string(i));
-            for(uint32_t k=0;k<linkCount;++k){if(!r.index(idx,boneIndexSize,true))return fail("bad IK link on bone " + std::to_string(i));uint8_t hasLimit{};if(!r.u8(hasLimit))return fail("bad IK limit flag on bone " + std::to_string(i));if(hasLimit)for(int n=0;n<6;++n)if(!r.f32(f))return fail("bad IK limits on bone " + std::to_string(i));}
+    uint32_t boneCount{}; if (!r.u32(boneCount) || boneCount > 1000000) return fail("invalid bone count"); _bones.reserve(boneCount);
+    for (uint32_t i = 0; i < boneCount; ++i) {
+        Bone b{}; if (!r.text(b.name, encoding) || !r.text(b.englishName, encoding) || !r.vec3(b.position.x, b.position.y, b.position.z) || !r.index(b.parent, boneIndexSize, true)) return fail("failed bone header " + std::to_string(i));
+        uint16_t flags{}; if (!r.u16(flags)) return fail("failed bone flags " + std::to_string(i)); int32_t idx{}; float f{};
+        if (flags & 0x0001) { if (!r.index(idx, boneIndexSize, true)) return fail("bad bone tail index " + std::to_string(i)); }
+        else { for (int n = 0; n < 3; ++n) if (!r.f32(f)) return fail("bad bone tail position " + std::to_string(i)); }
+        if (flags & (0x0100 | 0x0200)) { if (!r.index(idx, boneIndexSize, true) || !r.f32(f)) return fail("bad bone inherit data " + std::to_string(i)); }
+        if (flags & 0x0400) for (int n = 0; n < 3; ++n) if (!r.f32(f)) return fail("bad bone fixed axis " + std::to_string(i));
+        if (flags & 0x0800) for (int n = 0; n < 6; ++n) if (!r.f32(f)) return fail("bad bone local axis " + std::to_string(i));
+        if (flags & 0x2000) { if (!r.i32(idx)) return fail("bad external parent key " + std::to_string(i)); }
+        if (flags & 0x0020) {
+            if (!r.index(idx, boneIndexSize, true)) return fail("bad IK target " + std::to_string(i));
+            uint32_t loopCount{}; if (!r.u32(loopCount) || loopCount > 100000) return fail("invalid IK loop count on bone " + std::to_string(i));
+            if (!r.f32(f)) return fail("bad IK loop angle " + std::to_string(i));
+            uint32_t linkCount{}; if (!r.u32(linkCount) || linkCount > 100000) return fail("invalid IK link count on bone " + std::to_string(i));
+            for (uint32_t k = 0; k < linkCount; ++k) {
+                if (!r.index(idx, boneIndexSize, true)) return fail("bad IK link on bone " + std::to_string(i));
+                uint8_t hasLimit{}; if (!r.u8(hasLimit)) return fail("bad IK limit flag on bone " + std::to_string(i));
+                if (hasLimit) for (int n = 0; n < 6; ++n) if (!r.f32(f)) return fail("bad IK limit data on bone " + std::to_string(i));
+            }
         }
         _bones.push_back(std::move(b));
     }
-    _loaded=true;return true;
+
+    _loaded = true;
+    return true;
 }
 
-bool Model::loadTextures(const std::string& directory){if(!_loaded)return false;_textureDirectory=std::filesystem::path(directory).lexically_normal().string();return std::filesystem::exists(_textureDirectory)&&std::filesystem::is_directory(_textureDirectory);}
-}
+} // namespace gene
