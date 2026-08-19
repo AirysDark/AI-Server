@@ -32,17 +32,8 @@ static LRESULT CALLBACK GeneWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
         return 0;
 
     case WM_ERASEBKGND:
+        // The renderer owns the complete client area through its back buffer.
         return 1;
-
-    case WM_SIZE:
-        if (renderer != nullptr)
-        {
-            int width = LOWORD(lParam);
-            int height = HIWORD(lParam);
-            if (width > 0 && height > 0)
-                renderer->ensureBackBuffer(width, height);
-        }
-        return 0;
 
     case WM_DESTROY:
         PostQuitMessage(0);
@@ -298,11 +289,6 @@ void Renderer::paint()
 
     PAINTSTRUCT ps = {};
     HDC windowDC = BeginPaint(hwnd, &ps);
-    if (windowDC == nullptr)
-    {
-        EndPaint(hwnd, &ps);
-        return;
-    }
 
     RECT client = {};
     GetClientRect(hwnd, &client);
@@ -345,10 +331,10 @@ void Renderer::setWindowTitle(const std::string& title)
 void Renderer::shutdown()
 {
     HWND hwnd = static_cast<HWND>(_window);
-    _window = nullptr;
     _running = false;
 
     destroyBackBuffer();
+    _window = nullptr;
 
     if (hwnd != nullptr)
         DestroyWindow(hwnd);
