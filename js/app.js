@@ -10,11 +10,7 @@ async function boot(){
   if(!s.setup_complete){location.href='setup.html';return}
   fillSettings(s);
   const chatId=new URLSearchParams(location.search).get('chat');
-  if(chatId){
-   await loadSelectedChat(chatId);
-  }else{
-   await loadMemory();
-  }
+  if(chatId)await loadSelectedChat(chatId);else await loadMemory();
   startProactive();
  }catch(e){
   console.error('AI boot failed',e);
@@ -28,7 +24,11 @@ async function loadSelectedChat(chatId){
  if(!id)throw Error('Missing conversation ID');
  const result=await apiPost('/api/chats/open',{conversation_id:id});
  if(!result||result.ok===false)throw Error(result?.error||'Could not open conversation');
- let conversation=result.conversation;
+ // The archive is returned directly as `conversation`; `data` is only a
+ // compatibility wrapper. Never rewrite or copy the archive to current.json.
+ let archive=result;
+ if(archive.data&&typeof archive.data==='object'&&!Array.isArray(archive.data))archive=archive.data;
+ let conversation=archive.conversation;
  if(!Array.isArray(conversation)&&result.data&&Array.isArray(result.data.conversation))conversation=result.data.conversation;
  if(!Array.isArray(conversation))throw Error('Conversation archive has invalid format');
  const chat=document.getElementById('chat');
