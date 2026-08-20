@@ -4,6 +4,7 @@ import os
 import sys
 import json
 import uuid
+import logging
 from dotenv import load_dotenv
 PROJECT_DIR=os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(PROJECT_DIR,".env"),override=False)
@@ -16,6 +17,7 @@ from core.auth import current_user,get_accounts,hash_password,normalize_email,va
 from core.ai_manager import active_ai,ensure_first_ai,list_ais
 from core.storage import save_json
 from core.config import AUTH_FILE
+from core.local_model_bridge import handle_wsgi_upload
 import chats_api
 from reset_auth import request_reset,reset_password
 class _WSGIConnection:
@@ -91,8 +93,12 @@ def application(environ,start_response):
   if key.startswith("HTTP_"):header_lines.append(f"{key[5:].replace('_','-')}: {value}")
  if environ.get("CONTENT_TYPE"):header_lines.append(f"Content-Type: {environ['CONTENT_TYPE']}")
  if environ.get("CONTENT_LENGTH"):header_lines.append(f"Content-Length: {environ['CONTENT_LENGTH']}")
- body_length=int(environ.get("CONTENT_LENGTH") or 0);body=environ["wsgi.input"].read(body_length) if body_length else b""
  log_access(f"{environ.get('REMOTE_ADDR','-')} {method} {request_target}")
+ # Stream large GGUF uploads directly to disk. Do this before the generic
+ # body read, otherwise an 800+ MB model would be copied into Python RAM.
+ if method=="POST" and path=="/api/local-model":
+  return handle_wsgi_upload(environ,start_response)
+ body_length=int(environ.get("CONTENT_LENGTH") or 0);body=environ["wsgi.input"].read(body_length) if body_length else b""
  direct=_auth_route(environ,start_response,method,path,body)
  if direct is not None:return direct
  direct=_conversation_route(environ,start_response,method,path,body)
