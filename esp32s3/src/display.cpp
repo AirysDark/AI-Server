@@ -1,10 +1,10 @@
 #include "display.h"
 #include "pins.h"
 #include "cartoon_renderer.h"
+#include <TFT_eSPI.h>
 #include <SPI.h>
 
 static CartoonRenderer cartoon;
-static TFT_eSPI* tftPtr = nullptr;
 
 void AiDisplay::begin() {
     pinMode(Pins::TFT_LED, OUTPUT);
@@ -31,7 +31,6 @@ void AiDisplay::showWaitingForRender(const String& renderer) {
     // Keep the hardware in a deterministic READY state until the
     // network renderer starts supplying actual AI frames.
     static TFT_eSPI waitingTft;
-    tftPtr = &waitingTft;
     waitingTft.init();
     waitingTft.setRotation(0);
     waitingTft.fillScreen(TFT_BLACK);
