@@ -17,40 +17,51 @@ LEARNING_FILE = os.path.join(LEARNING_DIR, "replies.json")
 TRAINING_FILE = os.path.join(LEARNING_DIR, "training.json")
 FEEDBACK_FILE = os.path.join(LEARNING_DIR, "feedback.json")
 
-# Local fallback model. The Q3_K_M build is deliberately the default because
-# it leaves more RAM for PythonAnywhere than the ~1.05 GB Q4_K_M build.
+# Local fallback model. A per-AI uploaded GGUF takes priority over this default.
 LOCAL_MODEL_PATH = os.path.abspath(os.getenv("AI_LOCAL_MODEL", os.path.join(BASE_DIR, "models", "SmolLM2-1.7B-Instruct-Q3_K_M.gguf")))
 LOCAL_MODEL_THREADS = max(1, int(os.getenv("AI_LOCAL_MODEL_THREADS", "2")))
 LOCAL_MODEL_CTX = max(1024, int(os.getenv("AI_LOCAL_MODEL_CTX", "3072")))
 LOCAL_MODEL_MAX_TOKENS = max(64, int(os.getenv("AI_LOCAL_MODEL_MAX_TOKENS", "384")))
 LOCAL_MODEL_TEMPERATURE = float(os.getenv("AI_LOCAL_MODEL_TEMPERATURE", "0.75"))
-_LOCAL_LLM = None
-_LOCAL_LLM_ERROR = None
+_LOCAL_LLMS = {}
+_LOCAL_LLM_ERRORS = {}
 
 
-def _load_local_llm():
-    global _LOCAL_LLM, _LOCAL_LLM_ERROR
-    if _LOCAL_LLM is not None:
-        return _LOCAL_LLM
-    if not os.path.isfile(LOCAL_MODEL_PATH):
-        _LOCAL_LLM_ERROR = f"Local GGUF model not found: {LOCAL_MODEL_PATH}"
-        print("LOCAL AI LOAD ERROR:", _LOCAL_LLM_ERROR)
+def _model_path(settings=None):
+    configured = str((settings or {}).get("local_model_path") or "").strip()
+    if configured:
+        candidate = os.path.abspath(configured)
+        if os.path.isfile(candidate):
+            return candidate
+        print("LOCAL AI MODEL PATH NOT FOUND:", candidate)
+    return LOCAL_MODEL_PATH
+
+
+def _load_local_llm(settings=None):
+    model_path = _model_path(settings)
+    if model_path in _LOCAL_LLMS:
+        return _LOCAL_LLMS[model_path]
+    if not os.path.isfile(model_path):
+        error = f"Local GGUF model not found: {model_path}"
+        _LOCAL_LLM_ERRORS[model_path] = error
+        print("LOCAL AI LOAD ERROR:", error)
         return None
     try:
         from llama_cpp import Llama
-        _LOCAL_LLM = Llama(
-            model_path=LOCAL_MODEL_PATH,
+        llm = Llama(
+            model_path=model_path,
             n_ctx=LOCAL_MODEL_CTX,
             n_threads=LOCAL_MODEL_THREADS,
             n_batch=128,
             verbose=False,
         )
-        _LOCAL_LLM_ERROR = None
-        print("LOCAL AI READY:", LOCAL_MODEL_PATH)
-        return _LOCAL_LLM
+        _LOCAL_LLMS[model_path] = llm
+        _LOCAL_LLM_ERRORS.pop(model_path, None)
+        print("LOCAL AI READY:", model_path)
+        return llm
     except Exception as exc:
-        _LOCAL_LLM_ERROR = f"Local LLM initialization failed: {exc}"
-        print("LOCAL AI LOAD ERROR:", _LOCAL_LLM_ERROR)
+        _LOCAL_LLM_ERRORS[model_path] = f"Local LLM initialization failed: {exc}"
+        print("LOCAL AI LOAD ERROR:", _LOCAL_LLM_ERRORS[model_path])
         return None
 
 
@@ -151,7 +162,7 @@ def _memory_prompt(memory):
 
 
 def _local_generate(message, settings, memory, learning_path=None):
-    model = _load_local_llm()
+    model = _load_local_llm(settings)
     if model is None: return None
     learned = find_reply(message, learning_path); memory_text = _memory_prompt(memory)
     user_prompt = _settings_prompt(settings)
