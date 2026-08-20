@@ -7,7 +7,7 @@
  function provider(){return document.getElementById('aiTokenProviderInput')?.value||'huggingface'}
  function ensureLocalOption(){
   const sel=document.getElementById('aiTokenProviderInput');if(!sel)return;
-  if(!Array.from(sel.options).some(o=>o.value==='local')){const o=document.createElement('option');o.value='local';o.textContent='Local AI (SmolLM2)';sel.appendChild(o)}
+  if(!Array.from(sel.options).some(o=>o.value==='local')){const o=document.createElement('option');o.value='local';o.textContent='Local AI (GGUF)';sel.appendChild(o)}
  }
  function modelControl(){return document.getElementById('apiModelInput')}
  function setModelControl(models,current){
@@ -37,15 +37,17 @@
   const p=provider();
   if(p==='local'){
    const label=document.getElementById('apiTokenLabel');if(label)label.textContent='Local AI Model';
-   const token=document.getElementById('hfTokenInput');if(token){token.value='';token.placeholder='Uses the server-local SmolLM2 model';token.disabled=true}
+   const token=document.getElementById('hfTokenInput');if(token){token.value='';token.placeholder='No API key required';token.disabled=true}
+   const localSection=document.getElementById('localModelSection');if(localSection)localSection.style.display='block';
    const other=document.getElementById('otherApiSettings');if(other)other.style.display='none';
    const link=document.getElementById('tokenLink');if(link){link.removeAttribute('href');link.textContent='Local model — no API key required'}
    const endpoint=document.getElementById('apiEndpointInput');if(endpoint)endpoint.value='';
-   const model=document.getElementById('apiModelInput');if(model)model.value='SmolLM2-1.7B-Instruct-Q4_K_M';
-   const compatibility=document.getElementById('apiCompatibilityText');if(compatibility)compatibility.textContent='Forced local AI. This AI will use the server-local SmolLM2 model and never call an external API.';
-   const status=document.getElementById('tokenStatus');if(status)status.textContent='Local AI enabled — no API token is used.';
+   const compatibility=document.getElementById('apiCompatibilityText');if(compatibility)compatibility.textContent='Forced local AI. This AI uses a GGUF selected from the server models folder and never calls an external API.';
+   const status=document.getElementById('tokenStatus');if(status)status.textContent='Local AI enabled — select a server model below.';
+   if(typeof window.loadServerModels==='function')window.loadServerModels();
    return;
   }
+  const localSection=document.getElementById('localModelSection');if(localSection)localSection.style.display='none';
   const token=document.getElementById('hfTokenInput');if(token)token.disabled=false;
   if(p==='openrouter'){
    const label=document.getElementById('apiTokenLabel');if(label)label.textContent='OpenRouter API Key';
