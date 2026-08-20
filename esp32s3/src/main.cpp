@@ -24,6 +24,10 @@ ChatManager chat;
 CharacterController character;
 CharacterPackageManager packages;
 
+// The ESP32-S3 is a display endpoint. It stays idle here until the
+// network renderer starts sending actual rendered AI frames.
+static bool waitingForRenderedAi = false;
+
 void setup() {
     Serial.begin(115200);
     delay(500);
@@ -39,40 +43,72 @@ void setup() {
     }
     character.loadFromSD();
     server.begin();
-    display.updateCharacter(character.animation().state());
+
     display.showWiFi("connecting...");
-    if (!server.connectWiFi(AI_WIFI_SSID, AI_WIFI_PASSWORD)) { character.setAnimation("offline"); display.updateCharacter(character.animation().state()); display.showError(server.lastError()); return; }
+    if (!server.connectWiFi(AI_WIFI_SSID, AI_WIFI_PASSWORD)) {
+        character.setAnimation("offline");
+        display.updateCharacter(character.animation().state());
+        display.showError(server.lastError());
+        return;
+    }
+
     display.showWiFi(WiFi.localIP().toString());
     display.showServer("checking...");
-    if (!server.serverReachable()) { character.setAnimation("offline"); display.updateCharacter(character.animation().state()); display.showServer("offline: " + server.lastError()); return; }
+    if (!server.serverReachable()) {
+        character.setAnimation("offline");
+        display.updateCharacter(character.animation().state());
+        display.showServer("offline: " + server.lastError());
+        return;
+    }
+
     display.showServer("online");
-    if (String(AiConfig::ACCOUNT_EMAIL) != "YOUR_AI_SERVER_EMAIL" && String(AiConfig::ACCOUNT_PASSWORD) != "YOUR_AI_SERVER_PASSWORD") {
+
+    if (String(AiConfig::ACCOUNT_EMAIL) != "YOUR_AI_SERVER_EMAIL" &&
+        String(AiConfig::ACCOUNT_PASSWORD) != "YOUR_AI_SERVER_PASSWORD") {
         character.setAnimation("thinking");
         display.showServer("logging in...");
-        if (!server.login(AiConfig::ACCOUNT_EMAIL, AiConfig::ACCOUNT_PASSWORD)) { character.setAnimation("sad"); display.showError("Login: " + server.lastError()); return; }
-        character.setAnimation("happy", 1500, false);
+        if (!server.login(AiConfig::ACCOUNT_EMAIL, AiConfig::ACCOUNT_PASSWORD)) {
+            character.setAnimation("sad");
+            display.updateCharacter(character.animation().state());
+            display.showError("Login: " + server.lastError());
+            return;
+        }
+
         Serial.println("[AUTH] logged in");
         String chats;
-        if (server.loadConversations(chats)) { Serial.println("[CHAT] Conversations loaded:"); Serial.println(chats); }
-    } else display.showServer("online - credentials not configured");
+        if (server.loadConversations(chats)) {
+            Serial.println("[CHAT] Conversations loaded:");
+            Serial.println(chats);
+        }
+    } else {
+        display.showServer("online - credentials not configured");
+    }
+
+    // Initialization is complete. Do not draw the old placeholder cartoon.
+    // The next stage is the rendered AI frame transport.
+    waitingForRenderedAi = true;
+    display.showWaitingForRender();
 }
 
 void loop() {
     touch.update();
-    character.update();
-    static AnimationState lastState = AnimationState::Offline;
-    static uint32_t lastFrame = UINT32_MAX;
-    const AnimationState current = character.animation().state();
-    const uint32_t frame = millis() / 100;
-    if (current != lastState || frame != lastFrame) {
-        lastState = current;
-        lastFrame = frame;
-        display.updateCharacter(current, frame);
-    }
+
     static unsigned long lastCheck = 0;
     if (millis() - lastCheck >= AiConfig::RECONNECT_INTERVAL_MS) {
         lastCheck = millis();
-        if (WiFi.status() != WL_CONNECTED) { character.setAnimation("offline"); display.showWiFi("disconnected"); WiFi.reconnect(); }
+        if (WiFi.status() != WL_CONNECTED) {
+            waitingForRenderedAi = false;
+            display.showWiFi("disconnected");
+            WiFi.reconnect();
+        } else if (!waitingForRenderedAi) {
+            display.showWiFi(WiFi.localIP().toString());
+            display.showServer("online");
+            waitingForRenderedAi = true;
+            display.showWaitingForRender();
+        }
     }
+
+    // Deliberately no local animation loop here. The ESP32-S3 is now a
+    // receiver/display target for the Python/Gene rendered AI stream.
     delay(10);
 }
