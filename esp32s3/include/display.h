@@ -10,6 +10,7 @@ public:
     void showBoot();
     void showWiFi(const String& status);
     void showServer(const String& status);
+    void showWaitingForRender(const String& renderer = "Gene Python MMD Renderer");
     void showMessage(const String& sender, const String& message);
     void showError(const String& message);
 private:
