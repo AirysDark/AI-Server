@@ -1,0 +1,40 @@
+{
+    "compilerOptions": {
+        "target": "ESNext",
+        "module": "ESNext",
+        "strict": true,
+        "esModuleInterop": true,
+        "moduleResolution": "bundler",
+        "forceConsistentCasingInFileNames": true,
+        "stripInternal": true,
+        "noEmitOnError": true,
+        "noImplicitAny": true,
+        "noImplicitReturns": true,
+        "noImplicitThis": true,
+        "noImplicitOverride": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "typeRoots": [
+            "./src/Types",
+            "./node_modules/@types"
+        ],
+        "paths": {
+            "@/*": [
+                "./src/*"
+            ]
+        }
+    },
+    "include": [
+        "src/**/*",
+        "node_modules/babylon-mmd/esm/**/*.types.d.ts"
+    ],
+    "exclude": [
+        "dist"
+    ],
+    "ts-node": {
+        "compilerOptions": {
+            "module": "NodeNext",
+            "moduleResolution": "NodeNext"
+        }
+    }
+}
