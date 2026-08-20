@@ -17,6 +17,8 @@ from core.telegram_bridge import install_handler_routes as _install_telegram_rou
 _install_telegram_routes(AIHandler)
 from core.admin_bridge import install_handler_routes as _install_admin_routes
 _install_admin_routes(AIHandler)
+from core.local_model_bridge import install_handler_routes as _install_local_model_routes
+_install_local_model_routes(AIHandler)
 PORT=__import__("core.config",fromlist=["PORT"]).PORT
 PUBLIC_URL=__import__("core.config",fromlist=["PUBLIC_URL"]).PUBLIC_URL
 
