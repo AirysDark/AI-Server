@@ -4,6 +4,7 @@
 #include <SPI.h>
 
 static CartoonRenderer cartoon;
+static TFT_eSPI* tftPtr = nullptr;
 
 void AiDisplay::begin() {
     pinMode(Pins::TFT_LED, OUTPUT);
@@ -24,6 +25,24 @@ void AiDisplay::drawCharacter(AnimationState state, uint32_t frame) {
 
 void AiDisplay::updateCharacter(AnimationState state, uint32_t frame) {
     drawCharacter(state, frame);
+}
+
+void AiDisplay::showWaitingForRender(const String& renderer) {
+    // Keep the hardware in a deterministic READY state until the
+    // network renderer starts supplying actual AI frames.
+    static TFT_eSPI waitingTft;
+    tftPtr = &waitingTft;
+    waitingTft.init();
+    waitingTft.setRotation(0);
+    waitingTft.fillScreen(TFT_BLACK);
+    waitingTft.setTextDatum(MC_DATUM);
+    waitingTft.setTextColor(TFT_WHITE, TFT_BLACK);
+    waitingTft.drawString("AI DISPLAY", waitingTft.width() / 2, waitingTft.height() / 2 - 45, 4);
+    waitingTft.setTextColor(TFT_CYAN, TFT_BLACK);
+    waitingTft.drawString("WAITING FOR RENDERED AI", waitingTft.width() / 2, waitingTft.height() / 2, 2);
+    waitingTft.setTextColor(TFT_DARKGREY, TFT_BLACK);
+    waitingTft.drawString(renderer, waitingTft.width() / 2, waitingTft.height() / 2 + 35, 1);
+    Serial.println("[DISPLAY] READY - waiting for rendered AI");
 }
 
 void AiDisplay::showBoot() { Serial.println("[DISPLAY] AI Server ESP32-S3 client"); }
