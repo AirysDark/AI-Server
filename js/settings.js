@@ -8,12 +8,13 @@ function updateTokenProviderUI(){
  const endpoint=$('apiEndpointInput');const model=$('apiModelInput');
  if(google&&endpoint&&(!endpoint.value||endpoint.value.includes('/openai/chat/completions')))endpoint.value='https://generativelanguage.googleapis.com/v1beta';
  if(openrouter&&endpoint&&(!endpoint.value||endpoint.value.includes('api.openai.com')))endpoint.value='https://openrouter.ai/api/v1/chat/completions';
- if(local){if(endpoint)endpoint.value='';if(model&&(!model.value||model.value.startsWith('SmolLM2-')))model.value='SmolLM2-1.7B-Instruct-Q3_K_M'}
+ if(local){if(endpoint)endpoint.value='';if(model)model.value=model.value||'SmolLM2-1.7B-Instruct-Q3_K_M'}
  if(google&&model&&['gemini-2.5-flash','gemini-3.6-flash','gemini-3.5-flash','gemini-3.5-flash-lite','gemini-3.1-flash-lite'].includes(model.value.trim()))model.value='';
  if(endpoint)endpoint.placeholder=google?'https://generativelanguage.googleapis.com/v1beta':openrouter?'https://openrouter.ai/api/v1/chat/completions':openai?'https://api.openai.com/v1/chat/completions':local?'Not used by Local AI':'API endpoint';
  if(model)model.placeholder=google?'Leave blank to auto-select an available Gemini model':openrouter?'Select a free OpenRouter model':local?'Uploaded GGUF model':'gpt-4o-mini';
  const compatibility=$('apiCompatibilityText');if(compatibility)compatibility.innerText=local?'This AI runs its uploaded GGUF locally on the AI-Server. No external API is used.':google?'This AI uses its own Google AI Studio API key.':openrouter?'This AI uses its own OpenRouter API key and OpenRouter free-model routing.':openai?'This AI uses its own OpenAI API token.':'This AI uses its own Hugging Face API token.';
- if(local){const status=$('tokenStatus');if(status)status.innerText='Local AI selected — no API token required.'}
+ if(local){const status=$('tokenStatus');if(status)status.innerText='Local AI selected — choose a GGUF file below.'}
+ if(local)loadLocalModelStatus();
 }
 function setValue(id,value){const el=$(id);if(el)el.value=value??'';return el}
 function setChecked(id,value){const el=$(id);if(el)el.checked=!!value;return el}
