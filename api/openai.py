@@ -1,5 +1,7 @@
 import base64
 import os
+from urllib.parse import urlparse
+
 import requests
 
 DEFAULT_ENDPOINT = "https://api.openai.com/v1/chat/completions"
@@ -7,7 +9,27 @@ DEFAULT_MODEL = "gpt-4o-mini"
 
 
 def _endpoint(settings):
-    return str(settings.get("api_endpoint") or DEFAULT_ENDPOINT).strip()
+    """Return a safe OpenAI Chat Completions endpoint.
+
+    Old AI settings can retain a Google/OpenRouter endpoint after the provider
+    is switched. Never send an OpenAI model/token to another provider host.
+    A custom endpoint is still allowed when it is clearly OpenAI-compatible.
+    """
+    configured = str(settings.get("api_endpoint") or "").strip()
+    if not configured:
+        return DEFAULT_ENDPOINT
+
+    try:
+        host = (urlparse(configured).hostname or "").lower()
+    except Exception:
+        host = ""
+
+    # Stale endpoints from the other built-in providers must never be reused.
+    if host.endswith("googleapis.com") or host.endswith("openrouter.ai"):
+        print("OPENAI ENDPOINT RESET:", configured, "->", DEFAULT_ENDPOINT)
+        return DEFAULT_ENDPOINT
+
+    return configured
 
 
 def _model(settings):
@@ -29,28 +51,6 @@ def _uses_completion_tokens(model):
     """Models that require max_completion_tokens instead of max_tokens."""
     name = str(model or "").strip().lower()
     return name.startswith(("gpt-5", "o1", "o3", "o4"))
-
-
-def _response_error(response, data):
-    request_id = response.headers.get("x-request-id") or response.headers.get("request-id") or ""
-    content_type = response.headers.get("content-type", "")
-    body = (response.text or "").strip()
-    if len(body) > 1200:
-        body = body[:1200] + "..."
-    detail = data
-    if isinstance(data, dict) and data.get("error"):
-        detail = data.get("error")
-    return (
-        f"OpenAI HTTP {response.status_code}; "
-        f"model={_model_from_response_context(response)}; "
-        f"content_type={content_type or 'unknown'}; "
-        f"request_id={request_id or 'none'}; "
-        f"error={detail!r}; body={body!r}"
-    )
-
-
-def _model_from_response_context(response):
-    return getattr(response.request, "_ai_model", "unknown")
 
 
 def chat(token, settings, system_prompt, prompt, image_path=None, timeout=45):
@@ -94,11 +94,6 @@ def chat(token, settings, system_prompt, prompt, image_path=None, timeout=45):
     except requests.RequestException as exc:
         raise RuntimeError(f"OpenAI transport error for {model}: {exc}") from exc
 
-    try:
-        setattr(response.request, "_ai_model", model)
-    except Exception:
-        pass
-
     request_id = response.headers.get("x-request-id") or response.headers.get("request-id") or ""
     print(
         "OPENAI RESPONSE:",
@@ -118,7 +113,6 @@ def chat(token, settings, system_prompt, prompt, image_path=None, timeout=45):
         body = (response.text or "").strip()
         if len(body) > 1200:
             body = body[:1200] + "..."
-        request_id = response.headers.get("x-request-id") or response.headers.get("request-id") or ""
         content_type = response.headers.get("content-type", "")
         error_detail = data.get("error") if isinstance(data, dict) else data
         raise RuntimeError(
