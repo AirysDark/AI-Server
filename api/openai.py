@@ -31,11 +31,34 @@ def _uses_completion_tokens(model):
     return name.startswith(("gpt-5", "o1", "o3", "o4"))
 
 
+def _response_error(response, data):
+    request_id = response.headers.get("x-request-id") or response.headers.get("request-id") or ""
+    content_type = response.headers.get("content-type", "")
+    body = (response.text or "").strip()
+    if len(body) > 1200:
+        body = body[:1200] + "..."
+    detail = data
+    if isinstance(data, dict) and data.get("error"):
+        detail = data.get("error")
+    return (
+        f"OpenAI HTTP {response.status_code}; "
+        f"model={_model_from_response_context(response)}; "
+        f"content_type={content_type or 'unknown'}; "
+        f"request_id={request_id or 'none'}; "
+        f"error={detail!r}; body={body!r}"
+    )
+
+
+def _model_from_response_context(response):
+    return getattr(response.request, "_ai_model", "unknown")
+
+
 def chat(token, settings, system_prompt, prompt, image_path=None, timeout=45):
     endpoint = _endpoint(settings)
     model = _model(settings)
     base64_img = _encode_image(image_path)
     user_content = prompt
+
     if base64_img:
         user_content = [
             {"type": "text", "text": prompt},
@@ -50,24 +73,68 @@ def chat(token, settings, system_prompt, prompt, image_path=None, timeout=45):
         ],
     }
 
-    # GPT-5/reasoning-model Chat Completions requests use
-    # max_completion_tokens. Keep max_tokens for older models.
     if _uses_completion_tokens(model):
         payload["max_completion_tokens"] = 512
     else:
         payload["max_tokens"] = 512
         payload["temperature"] = 0.7
 
-    response = requests.post(
-        endpoint,
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-        json=payload,
-        timeout=timeout,
+    print("OPENAI REQUEST:", f"model={model}", f"endpoint={endpoint}")
+
+    try:
+        response = requests.post(
+            endpoint,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=timeout,
+        )
+    except requests.RequestException as exc:
+        raise RuntimeError(f"OpenAI transport error for {model}: {exc}") from exc
+
+    try:
+        setattr(response.request, "_ai_model", model)
+    except Exception:
+        pass
+
+    request_id = response.headers.get("x-request-id") or response.headers.get("request-id") or ""
+    print(
+        "OPENAI RESPONSE:",
+        f"status={response.status_code}",
+        f"model={model}",
+        f"request_id={request_id or 'none'}",
+        f"content_type={response.headers.get('content-type', '') or 'unknown'}",
+        f"body_chars={len(response.text or '')}",
     )
+
     try:
         data = response.json()
     except Exception:
-        data = {"error": response.text[:500]}
-    if response.status_code >= 400 or not data.get("choices"):
-        raise RuntimeError(str(data))
-    return data["choices"][0]["message"]["content"]
+        data = {"error": (response.text or "")[:1200]}
+
+    if response.status_code >= 400 or not isinstance(data, dict) or not data.get("choices"):
+        body = (response.text or "").strip()
+        if len(body) > 1200:
+            body = body[:1200] + "..."
+        request_id = response.headers.get("x-request-id") or response.headers.get("request-id") or ""
+        content_type = response.headers.get("content-type", "")
+        error_detail = data.get("error") if isinstance(data, dict) else data
+        raise RuntimeError(
+            f"OpenAI HTTP {response.status_code}; model={model}; "
+            f"content_type={content_type or 'unknown'}; "
+            f"request_id={request_id or 'none'}; "
+            f"error={error_detail!r}; body={body!r}"
+        )
+
+    message = data["choices"][0].get("message", {})
+    content = message.get("content")
+    if isinstance(content, str) and content.strip():
+        return content.strip()
+
+    raise RuntimeError(
+        f"OpenAI returned no message content for model={model}; "
+        f"finish_reason={data['choices'][0].get('finish_reason')!r}; "
+        f"request_id={request_id or 'none'}"
+    )
