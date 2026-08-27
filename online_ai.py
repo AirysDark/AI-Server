@@ -153,7 +153,7 @@ def _ask_provider(prompt, settings, knowledge, image_path, provider):
             if not reply: raise RuntimeError("OpenAI returned an empty response")
             _mark_success(key); learn_online_response(prompt, reply, settings); return reply
         except Exception as e:
-            _mark_failure(key, e); raise RuntimeError(f"OpenAI request failed: {str(e)[:500]}") from e
+            _mark_failure(key, e); raise RuntimeError(f"OpenAI request failed: {str(e)[:1000]}") from e
     models = huggingface.VISION_MODELS if image_path else huggingface.TEXT_MODELS
     if image_path: models = [m for m in models if huggingface.is_vision_model(m)]
     if not models: models = ["Qwen/Qwen2.5-7B-Instruct-1M"]
@@ -183,11 +183,18 @@ def ask_online_with_error(prompt, settings=None, knowledge="", image_path=None):
     except Exception as e:
         message = str(e).strip() or f"{selected} provider failed without an error message"
         print("ONLINE AI FAILED FOR SELECTED AI:", selected, message)
-        return None, message[:1000]
+        return None, message[:2000]
 
 def ask_online(prompt, settings=None, knowledge="", image_path=None):
+    settings = settings or {}
+    selected = provider_name(settings)
     reply, error = ask_online_with_error(prompt, settings, knowledge, image_path)
-    if reply: return reply
+    if reply:
+        return reply
     if error and str(prompt).startswith("You are participating in a multi-AI conversation."):
         return f"[ONLINE AI ERROR: {error}]"
+    if error and selected != "local":
+        # If the user explicitly selected an online provider, report that
+        # provider failure instead of silently running a different local model.
+        raise RuntimeError(error)
     return None
