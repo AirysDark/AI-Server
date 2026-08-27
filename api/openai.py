@@ -25,6 +25,12 @@ def _encode_image(image_path):
         return base64.b64encode(f.read()).decode("utf-8")
 
 
+def _uses_completion_tokens(model):
+    """Models that require max_completion_tokens instead of max_tokens."""
+    name = str(model or "").strip().lower()
+    return name.startswith(("gpt-5", "o1", "o3", "o4"))
+
+
 def chat(token, settings, system_prompt, prompt, image_path=None, timeout=45):
     endpoint = _endpoint(settings)
     model = _model(settings)
@@ -35,15 +41,23 @@ def chat(token, settings, system_prompt, prompt, image_path=None, timeout=45):
             {"type": "text", "text": prompt},
             {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_img}"}},
         ]
+
     payload = {
         "model": model,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content},
         ],
-        "max_tokens": 512,
-        "temperature": 0.7,
     }
+
+    # GPT-5/reasoning-model Chat Completions requests use
+    # max_completion_tokens. Keep max_tokens for older models.
+    if _uses_completion_tokens(model):
+        payload["max_completion_tokens"] = 512
+    else:
+        payload["max_tokens"] = 512
+        payload["temperature"] = 0.7
+
     response = requests.post(
         endpoint,
         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
