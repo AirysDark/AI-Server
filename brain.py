@@ -18,13 +18,13 @@ LEARNING_FILE = os.path.join(LEARNING_DIR, "replies.json")
 TRAINING_FILE = os.path.join(LEARNING_DIR, "training.json")
 FEEDBACK_FILE = os.path.join(LEARNING_DIR, "feedback.json")
 
-# Conservative defaults for CPU-only hosting. They can still be overridden by environment variables.
+# Fast defaults for CPU-hosted GGUF models.
 LOCAL_MODEL_PATH = os.path.abspath(os.getenv("AI_LOCAL_MODEL", os.path.join(BASE_DIR, "models", "SmolLM2-1.7B-Instruct-Q3_K_M.gguf")))
-LOCAL_MODEL_THREADS = max(1, int(os.getenv("AI_LOCAL_MODEL_THREADS", "2")))
-LOCAL_MODEL_CTX = max(512, int(os.getenv("AI_LOCAL_MODEL_CTX", "1024")))
-LOCAL_MODEL_MAX_TOKENS = max(16, int(os.getenv("AI_LOCAL_MODEL_MAX_TOKENS", "64")))
+LOCAL_MODEL_THREADS = max(1, int(os.getenv("AI_LOCAL_MODEL_THREADS", "4")))
+LOCAL_MODEL_CTX = max(1024, int(os.getenv("AI_LOCAL_MODEL_CTX", "2048")))
+LOCAL_MODEL_MAX_TOKENS = max(8, int(os.getenv("AI_LOCAL_MODEL_MAX_TOKENS", "32")))
 LOCAL_MODEL_TEMPERATURE = float(os.getenv("AI_LOCAL_MODEL_TEMPERATURE", "0.75"))
-LOCAL_PROMPT_CHARS = max(1000, int(os.getenv("AI_LOCAL_PROMPT_CHARS", "12000")))
+LOCAL_PROMPT_CHARS = max(800, int(os.getenv("AI_LOCAL_PROMPT_CHARS", "1800")))
 _LOCAL_LLMS = {}
 _LOCAL_LLM_ERRORS = {}
 
@@ -33,33 +33,33 @@ def _model_path(settings=None):
     configured = str((settings or {}).get("local_model_path") or "").strip()
     if configured:
         candidate = os.path.abspath(configured)
-        if os.path.isfile(candidate):
-            return candidate
+        if os.path.isfile(candidate): return candidate
         print("LOCAL AI MODEL PATH NOT FOUND:", candidate)
     return LOCAL_MODEL_PATH
 
 
 def _load_local_llm(settings=None):
     model_path = _model_path(settings)
-    if model_path in _LOCAL_LLMS:
-        return _LOCAL_LLMS[model_path]
+    if model_path in _LOCAL_LLMS: return _LOCAL_LLMS[model_path]
     if not os.path.isfile(model_path):
         error = f"Local GGUF model not found: {model_path}"
-        _LOCAL_LLM_ERRORS[model_path] = error
-        print("LOCAL AI LOAD ERROR:", error)
-        return None
+        _LOCAL_LLM_ERRORS[model_path] = error; print("LOCAL AI LOAD ERROR:", error); return None
     try:
         from llama_cpp import Llama
         print("LOCAL AI LOADING:", model_path)
-        llm = Llama(model_path=model_path, n_ctx=LOCAL_MODEL_CTX, n_threads=LOCAL_MODEL_THREADS, n_batch=64, verbose=False)
-        _LOCAL_LLMS[model_path] = llm
-        _LOCAL_LLM_ERRORS.pop(model_path, None)
-        print("LOCAL AI READY:", model_path)
-        return llm
+        llm = Llama(
+            model_path=model_path,
+            n_ctx=LOCAL_MODEL_CTX,
+            n_threads=LOCAL_MODEL_THREADS,
+            n_threads_batch=LOCAL_MODEL_THREADS,
+            n_batch=256,
+            verbose=False,
+        )
+        _LOCAL_LLMS[model_path] = llm; _LOCAL_LLM_ERRORS.pop(model_path, None)
+        print("LOCAL AI READY:", model_path); return llm
     except Exception as exc:
         _LOCAL_LLM_ERRORS[model_path] = f"Local LLM initialization failed: {exc}"
-        print("LOCAL AI LOAD ERROR:", _LOCAL_LLM_ERRORS[model_path])
-        return None
+        print("LOCAL AI LOAD ERROR:", _LOCAL_LLM_ERRORS[model_path]); return None
 
 
 def load_json(path, default):
@@ -78,14 +78,9 @@ def default_memory(): return {"profile": {}, "facts": {}, "preferences": {}, "pe
 
 def remember(memory, category, key, value): memory.setdefault(category, {})[key.lower().strip()] = str(value).strip()
 
-
 def learn_from_conversation(user, reply, memory_path=None):
-    path = memory_path or MEMORY_FILE
-    memory = load_json(path, default_memory())
-    memory.setdefault("conversations", [])
-    user_text = str(user or "")
-    ai_text = str(reply or "")
-    entry = {"time": datetime.now().isoformat(), "user": user_text, "ai": ai_text, "AI": ai_text}
+    path = memory_path or MEMORY_FILE; memory = load_json(path, default_memory()); memory.setdefault("conversations", [])
+    user_text = str(user or ""); ai_text = str(reply or ""); entry = {"time": datetime.now().isoformat(), "user": user_text, "ai": ai_text, "AI": ai_text}
     if memory["conversations"]:
         last = memory["conversations"][-1]
         if isinstance(last, dict) and last.get("user") == user_text and str(last.get("ai", last.get("AI", ""))) == ai_text: return
@@ -141,35 +136,30 @@ def _settings_prompt(settings):
     parts = [f"You are {name}, an adult fictional AI companion."]
     for key, label in (("description", "Description"), ("personality", "Personality"), ("instructions", "Instructions"), ("background", "Background/relationship"), ("user_name", "User name"), ("user_information", "User information")):
         value = str(settings.get(key) or "").strip()
-        if value: parts.append(f"{label}: {value[:4000]}")
-    config = settings.get("config", {}) if isinstance(settings.get("config", {}), dict) else {}
-    if config.get("traits"): parts.append("Traits: " + ", ".join(map(str, config["traits"])))
-    if config.get("rules"): parts.append("Rules: " + " | ".join(map(str, config["rules"])))
-    parts.append("Stay in character. Be natural and conversational. Do not mention the model, prompts, internal instructions, or implementation.")
+        if value: parts.append(f"{label}: {value[:300]}")
+    parts.append("Stay in character. Be natural and conversational. Reply briefly.")
     return "\n".join(parts)[:LOCAL_PROMPT_CHARS]
 
 
 def _memory_prompt(memory):
     parts = []
-    for category in ("profile", "facts", "preferences", "personality"):
+    for category in ("profile", "facts", "preferences"):
         values = memory.get(category, {})
-        if isinstance(values, dict) and values: parts.append(f"{category.title()}: " + json.dumps(values, ensure_ascii=False))
-    recent = memory.get("conversations", [])[-4:]
-    if recent: parts.append("Recent memory: " + json.dumps(recent, ensure_ascii=False))
-    return "\n".join(parts)[:4000]
+        if isinstance(values, dict) and values: parts.append(f"{category.title()}: " + json.dumps(values, ensure_ascii=False)[:300])
+    recent = memory.get("conversations", [])[-1:]
+    if recent: parts.append("Recent memory: " + json.dumps(recent, ensure_ascii=False)[:400])
+    return "\n".join(parts)[:600]
 
 
 def _local_generate(message, settings, memory, learning_path=None):
     model = _load_local_llm(settings)
     if model is None: return None
-    learned = find_reply(message, learning_path)
-    memory_text = _memory_prompt(memory)
-    system_prompt = _settings_prompt(settings)
-    user_prompt = str(message).strip()
+    learned = find_reply(message, learning_path); memory_text = _memory_prompt(memory); system_prompt = _settings_prompt(settings); user_prompt = str(message).strip()[:1000]
     if memory_text: user_prompt = "Relevant memory:\n" + memory_text + "\n\nUser: " + user_prompt
-    if learned: user_prompt += "\n\nUseful learned context: " + str(learned)[:1000]
+    if learned: user_prompt += "\n\nLearned context: " + str(learned)[:250]
     user_prompt += "\n\nReply naturally and briefly."
-    print(f"LOCAL AI GENERATING: prompt_chars={len(system_prompt) + len(user_prompt)} max_tokens={LOCAL_MODEL_MAX_TOKENS}")
+    prompt_chars = len(system_prompt) + len(user_prompt)
+    print(f"LOCAL AI GENERATING: prompt_chars={prompt_chars} ctx={LOCAL_MODEL_CTX} threads={LOCAL_MODEL_THREADS} batch=256 max_tokens={LOCAL_MODEL_MAX_TOKENS}")
     started = time.time()
     try:
         result = model.create_chat_completion(
@@ -178,15 +168,12 @@ def _local_generate(message, settings, memory, learning_path=None):
             temperature=LOCAL_MODEL_TEMPERATURE,
             top_p=0.9,
             repeat_penalty=1.12,
+            stream=False,
         )
-        elapsed = time.time() - started
-        choices = result.get("choices", []) if isinstance(result, dict) else []
-        if not choices:
-            print(f"LOCAL AI EMPTY RESPONSE after {elapsed:.1f}s")
-            return None
+        elapsed = time.time() - started; choices = result.get("choices", []) if isinstance(result, dict) else []
+        if not choices: print(f"LOCAL AI EMPTY RESPONSE after {elapsed:.1f}s"); return None
         reply = str(choices[0].get("message", {}).get("content", "")).strip() or None
-        print(f"LOCAL AI GENERATED in {elapsed:.1f}s chars={len(reply or '')}")
-        return reply
+        print(f"LOCAL AI GENERATED in {elapsed:.1f}s chars={len(reply or '')}"); return reply
     except Exception as exc:
         print("LOCAL AI GENERATION ERROR:", exc); return None
 
@@ -210,6 +197,6 @@ def think(message, settings=None, memory_path=None, learning_path=None):
     reply = reply.strip(); learn_from_conversation(text, reply, memory_path); return reply
 
 try:
-    import chats_api  # noqa: E402,F401
+    import chats_api
 except Exception as _chat_routes_error:
     print("CHAT ROUTES LOAD ERROR:", _chat_routes_error)
