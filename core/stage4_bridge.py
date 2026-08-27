@@ -15,8 +15,21 @@ def selected_conversation(uid,ai_id):
         data=load_archived_conversation(uid,ai_id,cid)
         if data is not None:return data
     return {"conversation":[],"memory":{},"proactive_state":{}}
-def save_message(uid,ai_id,user_message,ai_reply,image=None):
-    cid=selected_id()
+def save_message(uid,ai_id,*args):
+    """Persist a chat message while supporting both old and new server signatures.
+
+    Old: save_message(uid, ai_id, user_message, ai_reply, image=None)
+    New: save_message(uid, ai_id, conversation_id, user_message, ai_reply, image=None)
+    """
+    if len(args) == 2:
+        cid=selected_id(); user_message,ai_reply=args; image=None
+    elif len(args) == 3:
+        cid=selected_id(); user_message,ai_reply,image=args
+    elif len(args) == 4:
+        cid,user_message,ai_reply,image=args
+    else:
+        raise TypeError(f"save_message() expected 4 to 6 total positional arguments, got {len(args)+2}")
+    cid=str(cid or selected_id() or "").strip()
     if not cid: raise IOError("No conversation selected")
     data=load_archived_conversation(uid,ai_id,cid) or {"conversation":[],"memory":{},"proactive_state":{},"created":time.time()}
     now=time.time(); user_text=str(user_message or ""); ai_text=str(ai_reply or "")
