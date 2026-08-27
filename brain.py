@@ -3,7 +3,6 @@ import os
 import random
 import re
 import time
-import multiprocessing as mp
 from datetime import datetime
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -26,7 +25,6 @@ LOCAL_MODEL_CTX = max(1024, int(os.getenv("AI_LOCAL_MODEL_CTX", "2048")))
 LOCAL_MODEL_MAX_TOKENS = max(8, int(os.getenv("AI_LOCAL_MODEL_MAX_TOKENS", "32")))
 LOCAL_MODEL_TEMPERATURE = float(os.getenv("AI_LOCAL_MODEL_TEMPERATURE", "0.75"))
 LOCAL_PROMPT_CHARS = max(800, int(os.getenv("AI_LOCAL_PROMPT_CHARS", "1800")))
-LOCAL_MODEL_TIMEOUT = max(5, int(os.getenv("AI_LOCAL_MODEL_TIMEOUT", "60")))
 _LOCAL_LLMS = {}
 _LOCAL_LLM_ERRORS = {}
 
@@ -62,66 +60,6 @@ def _load_local_llm(settings=None):
     except Exception as exc:
         _LOCAL_LLM_ERRORS[model_path] = f"Local LLM initialization failed: {exc}"
         print("LOCAL AI LOAD ERROR:", _LOCAL_LLM_ERRORS[model_path]); return None
-
-
-def _generation_worker(queue, model_path, system_prompt, user_prompt):
-    """Run one GGUF request in an isolated process so a native llama.cpp hang can be terminated."""
-    try:
-        from llama_cpp import Llama
-        print("LOCAL AI WORKER LOADING:", model_path, flush=True)
-        model = Llama(
-            model_path=model_path,
-            n_ctx=LOCAL_MODEL_CTX,
-            n_threads=LOCAL_MODEL_THREADS,
-            n_threads_batch=LOCAL_MODEL_THREADS,
-            n_batch=256,
-            verbose=False,
-        )
-        print("LOCAL AI WORKER GENERATING", flush=True)
-        result = model.create_chat_completion(
-            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
-            max_tokens=LOCAL_MODEL_MAX_TOKENS,
-            temperature=LOCAL_MODEL_TEMPERATURE,
-            top_p=0.9,
-            repeat_penalty=1.12,
-            stream=False,
-        )
-        choices = result.get("choices", []) if isinstance(result, dict) else []
-        reply = str(choices[0].get("message", {}).get("content", "")).strip() if choices else ""
-        queue.put(("ok", reply))
-    except Exception as exc:
-        queue.put(("error", str(exc)))
-
-
-def _run_local_generation(model_path, system_prompt, user_prompt):
-    started = time.time()
-    try:
-        context = mp.get_context("spawn")
-        queue = context.Queue(maxsize=1)
-        process = context.Process(target=_generation_worker, args=(queue, model_path, system_prompt, user_prompt), daemon=True)
-        process.start()
-        process.join(LOCAL_MODEL_TIMEOUT)
-        elapsed = time.time() - started
-        if process.is_alive():
-            print(f"LOCAL AI TIMEOUT after {elapsed:.1f}s; terminating worker")
-            process.terminate(); process.join(5)
-            if process.is_alive(): process.kill(); process.join(2)
-            return None
-        try:
-            status, payload = queue.get(timeout=1)
-        except Exception:
-            print(f"LOCAL AI WORKER EXITED WITHOUT RESULT after {elapsed:.1f}s exitcode={process.exitcode}")
-            return None
-        if status == "ok":
-            reply = str(payload or "").strip()
-            if reply: print(f"LOCAL AI GENERATED in {elapsed:.1f}s chars={len(reply)}")
-            else: print(f"LOCAL AI EMPTY RESPONSE after {elapsed:.1f}s")
-            return reply or None
-        print("LOCAL AI GENERATION ERROR:", payload)
-        return None
-    except Exception as exc:
-        print("LOCAL AI WORKER ERROR:", exc)
-        return None
 
 
 def load_json(path, default):
@@ -167,7 +105,7 @@ def learn_reply(trigger, reply, learning_path=None):
 
 
 def record_feedback(trigger, reply, rating, learning_path=None, feedback_path=None):
-    rating = 1 if str(rating).lower() in ("up", "1", "positive", "good") else -1; path = learning_path or LEARNING_FILE; data = load_json(learning_path or LEARNING_FILE, {}); key = str(trigger).lower().strip(); item = data.get(key, {"score": 0, "uses": 0})
+    rating = 1 if str(rating).lower() in ("up", "1", "positive", "good") else -1; path = learning_path or LEARNING_FILE; data = load_json(path, {}); key = str(trigger).lower().strip(); item = data.get(key, {"score": 0, "uses": 0})
     item["reply"] = str(reply).strip(); item["score"] = int(item.get("score", 0)) + rating; item["feedback"] = item.get("feedback", 0) + 1; item["last_feedback"] = datetime.now().isoformat(); data[key] = item; save_json(path, data)
     feedback = load_json(feedback_path or FEEDBACK_FILE, []); feedback.append({"time": datetime.now().isoformat(), "trigger": trigger, "reply": reply, "rating": rating}); save_json(feedback_path or FEEDBACK_FILE, feedback[-2000:]); return item["score"]
 
@@ -214,16 +152,30 @@ def _memory_prompt(memory):
 
 
 def _local_generate(message, settings, memory, learning_path=None):
-    model_path = _model_path(settings)
-    if not os.path.isfile(model_path):
-        print("LOCAL AI LOAD ERROR: model not found:", model_path); return None
+    model = _load_local_llm(settings)
+    if model is None: return None
     learned = find_reply(message, learning_path); memory_text = _memory_prompt(memory); system_prompt = _settings_prompt(settings); user_prompt = str(message).strip()[:1000]
     if memory_text: user_prompt = "Relevant memory:\n" + memory_text + "\n\nUser: " + user_prompt
     if learned: user_prompt += "\n\nLearned context: " + str(learned)[:250]
     user_prompt += "\n\nReply naturally and briefly."
     prompt_chars = len(system_prompt) + len(user_prompt)
-    print(f"LOCAL AI GENERATING: prompt_chars={prompt_chars} ctx={LOCAL_MODEL_CTX} threads={LOCAL_MODEL_THREADS} batch=256 max_tokens={LOCAL_MODEL_MAX_TOKENS} timeout={LOCAL_MODEL_TIMEOUT}s")
-    return _run_local_generation(model_path, system_prompt, user_prompt)
+    print(f"LOCAL AI GENERATING: prompt_chars={prompt_chars} ctx={LOCAL_MODEL_CTX} threads={LOCAL_MODEL_THREADS} batch=256 max_tokens={LOCAL_MODEL_MAX_TOKENS}")
+    started = time.time()
+    try:
+        result = model.create_chat_completion(
+            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+            max_tokens=LOCAL_MODEL_MAX_TOKENS,
+            temperature=LOCAL_MODEL_TEMPERATURE,
+            top_p=0.9,
+            repeat_penalty=1.12,
+            stream=False,
+        )
+        elapsed = time.time() - started; choices = result.get("choices", []) if isinstance(result, dict) else []
+        if not choices: print(f"LOCAL AI EMPTY RESPONSE after {elapsed:.1f}s"); return None
+        reply = str(choices[0].get("message", {}).get("content", "")).strip() or None
+        print(f"LOCAL AI GENERATED in {elapsed:.1f}s chars={len(reply or '')}"); return reply
+    except Exception as exc:
+        print("LOCAL AI GENERATION ERROR:", exc); return None
 
 
 def fake_reply(text):
