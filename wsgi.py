@@ -13,11 +13,15 @@ os.chdir(PROJECT_DIR)
 from core.logging_setup import setup_logging,log_access
 setup_logging()
 from server import AIHandler
+# PythonAnywhere imports this WSGI file directly. Install the local-model
+# routes here as well so /api/local-model and /api/local-models are available
+# even if the normal standalone server startup path changes.
+from core.local_model_bridge import handle_wsgi_upload, install_handler_routes as _install_local_model_routes
+_install_local_model_routes(AIHandler)
 from core.auth import current_user,get_accounts,hash_password,normalize_email,valid_email,create_session
 from core.ai_manager import active_ai,ensure_first_ai,list_ais
 from core.storage import save_json
 from core.config import AUTH_FILE
-from core.local_model_bridge import handle_wsgi_upload
 import chats_api
 from reset_auth import request_reset,reset_password
 class _WSGIConnection:
@@ -94,8 +98,6 @@ def application(environ,start_response):
  if environ.get("CONTENT_TYPE"):header_lines.append(f"Content-Type: {environ['CONTENT_TYPE']}")
  if environ.get("CONTENT_LENGTH"):header_lines.append(f"Content-Length: {environ['CONTENT_LENGTH']}")
  log_access(f"{environ.get('REMOTE_ADDR','-')} {method} {request_target}")
- # Stream large GGUF uploads directly to disk. Do this before the generic
- # body read, otherwise an 800+ MB model would be copied into Python RAM.
  if method=="POST" and path=="/api/local-model":
   return handle_wsgi_upload(environ,start_response)
  body_length=int(environ.get("CONTENT_LENGTH") or 0);body=environ["wsgi.input"].read(body_length) if body_length else b""
