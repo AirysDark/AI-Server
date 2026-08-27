@@ -61,13 +61,18 @@ def ai_profile(profile, message, settings):
     return "\n".join(lines)
 
 
-def save_conversation(uid, ai_id, user_message, ai_reply, image=None):
-    data = load_conversation(uid, ai_id)
+def save_conversation(uid, ai_id, conversation_id, user_message, ai_reply, image=None):
+    conversation_id = clean_id(conversation_id)
+    if not conversation_id or conversation_id == "current":
+        raise ValueError("A valid conversation_id is required")
+    data = load_archived_conversation(uid, ai_id, conversation_id)
+    if data is None:
+        raise ValueError("Conversation not found")
     now = time.time()
     data.setdefault("conversation", []).append({"user": user_message, "ai": ai_reply, "image": image, "time": now})
     data["updated"] = now
     data.setdefault("created", now)
-    save_conversation_data(uid, ai_id, data)
+    save_archived_conversation(uid, ai_id, conversation_id, data)
 
 
 def safe_name(name):
@@ -82,10 +87,15 @@ def save_upload(data, name, directory):
     return filename
 
 
-def _chat_result(uid, ai_id, message, image_data=None, image_name=None):
+def _chat_result(uid, ai_id, conversation_id, message, image_data=None, image_name=None):
+    conversation_id = clean_id(conversation_id)
+    if not conversation_id or conversation_id == "current":
+        raise ValueError("A valid conversation_id is required")
     settings = load_settings(uid, ai_id)
     enabled = features(settings)
-    profile = load_conversation(uid, ai_id)
+    profile = load_archived_conversation(uid, ai_id, conversation_id)
+    if profile is None:
+        raise ValueError("Conversation not found")
     image_path = None
     if image_data and image_name:
         name = save_upload(image_data, image_name, upload_dir(uid, ai_id))
@@ -109,8 +119,8 @@ def _chat_result(uid, ai_id, message, image_data=None, image_name=None):
         image_path = random_image(uid, ai_id)
     if enabled["learning"]:
         learn_from_conversation(prompt, reply, scoped_memory)
-    save_conversation(uid, ai_id, message or "", reply, image_path)
-    return {"reply": reply, "user_id": uid, "ai_id": ai_id, "image": image_path}
+    save_conversation(uid, ai_id, conversation_id, message or "", reply, image_path)
+    return {"reply": reply, "user_id": uid, "ai_id": ai_id, "conversation_id": conversation_id, "image": image_path}
 
 
 class AIHandler(SimpleHTTPRequestHandler):
@@ -182,7 +192,9 @@ class AIHandler(SimpleHTTPRequestHandler):
             uid, ai_id = active_ai(self)
             if not uid:
                 return self.send_json({"error": "Authentication required"}, status=401)
-            return self.send_json(load_conversation(uid, ai_id), uid, 200, ai_id)
+            conversation_id = clean_id(cookie(self, "AI_chat"))
+            data = load_archived_conversation(uid, ai_id, conversation_id) if conversation_id else None
+            return self.send_json(data if data is not None else load_conversation(uid, ai_id), uid, 200, ai_id)
         if path == "/api/ais":
             uid = self.auth_required()
             if uid:
@@ -198,6 +210,9 @@ class AIHandler(SimpleHTTPRequestHandler):
                 uid, ai_id = active_ai(self)
                 if not uid:
                     return self.send_json({"error": "Authentication required"}, status=401)
+                conversation_id = clean_id(cookie(self, "AI_chat"))
+                if not conversation_id:
+                    return self.send_json({"error": "No active conversation selected"}, uid, 400, ai_id)
                 length = int(self.headers.get("Content-Length", 0))
                 if "multipart/form-data" in content_type:
                     raw = self.rfile.read(length)
@@ -215,10 +230,13 @@ class AIHandler(SimpleHTTPRequestHandler):
                                 image_data = part.get_payload(decode=True)
                             else:
                                 fields[name_match.group(1)] = part.get_content()
-                    result = _chat_result(uid, ai_id, fields.get("message", ""), image_data, image_name)
+                    result = _chat_result(uid, ai_id, conversation_id, fields.get("message", ""), image_data, image_name)
                 else:
                     data = json.loads(self.rfile.read(length).decode("utf-8"))
-                    result = _chat_result(uid, ai_id, data.get("message", ""))
+                    requested_id = clean_id(data.get("conversation_id"))
+                    if requested_id:
+                        conversation_id = requested_id
+                    result = _chat_result(uid, ai_id, conversation_id, data.get("message", ""))
                 return self.send_json(result, uid, 200, ai_id)
             if path in ("/api/profile_photo", "/api/ai_photo"):
                 uid, ai_id = active_ai(self)
@@ -316,4 +334,7 @@ class AIHandler(SimpleHTTPRequestHandler):
             self.send_error(404)
         except Exception as exc:
             print("SERVER ERROR:", exc)
-            self.send_error(500, str(exc))
+            try:
+                self.send_json({"ok": False, "error": str(exc)}, status=500)
+            except Exception:
+                pass
