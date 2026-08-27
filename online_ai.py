@@ -113,6 +113,57 @@ def _persona_settings(settings):
     return persona
 
 
+def _compact_conversation_context(knowledge):
+    """Keep only dynamic memory and recent chat context.
+
+    server_impl previously passed the whole AI profile again as knowledge, which
+    duplicated description/personality/instructions/traits/rules and could make
+    the system prompt grow past 10k characters. The authoritative profile now
+    comes only from the selected AI's settings.json; this helper keeps just the
+    changing memory and recent conversation.
+    """
+    text = str(knowledge or "").strip()
+    if not text:
+        return ""
+
+    parts = []
+
+    memory_match = re.search(
+        r"(?:^|\n)Memory:\s*(.*?)(?=\n(?:Recent conversation|Name|Description|Personality|Instructions|User name|User information|Traits|Rules):|\Z)",
+        text,
+        re.S,
+    )
+    if memory_match:
+        memory_text = memory_match.group(1).strip()
+        if memory_text:
+            parts.append("Memory:\n" + memory_text[:1800])
+
+    recent_match = re.search(r"(?:^|\n)Recent conversation:\s*(.*)\Z", text, re.S)
+    if recent_match:
+        raw = recent_match.group(1).strip()
+        if raw:
+            try:
+                recent = json.loads(raw)
+                if isinstance(recent, list):
+                    recent = recent[-4:]
+                    lines = []
+                    for item in recent:
+                        if not isinstance(item, dict):
+                            continue
+                        user = str(item.get("user") or item.get("user_message") or "").strip()[:500]
+                        ai = str(item.get("ai") or item.get("AI") or item.get("assistant") or item.get("ai_reply") or "").strip()[:500]
+                        if user:
+                            lines.append("User: " + user)
+                        if ai:
+                            lines.append("Assistant: " + ai)
+                    if lines:
+                        parts.append("Recent conversation:\n" + "\n".join(lines))
+            except Exception:
+                parts.append("Recent conversation:\n" + raw[-3000:])
+
+    return "\n\n".join(parts)[:4200]
+
+
 def _system_prompt(settings, knowledge):
     p = _persona_settings(settings)
 
@@ -123,9 +174,10 @@ def _system_prompt(settings, knowledge):
     instructions = p["instructions"] or "Follow the configured personality and answer the user directly."
     background = p["background"] or "Not specified."
     user_information = p["user_information"] or "Not specified."
-    knowledge_text = str(knowledge or "").strip() or "No additional knowledge supplied."
+    context_text = _compact_conversation_context(knowledge) or "No additional conversation context supplied."
 
-    return f"""You are the currently selected AI profile. The profile below comes from this AI's own settings.json and is the authoritative character configuration for this conversation. Follow it consistently unless a higher-priority platform or safety requirement conflicts with it.
+    return f"""SELECTED AI PROFILE — AUTHORITATIVE FOR THIS CONVERSATION
+The profile below comes directly from this selected AI's own settings.json. Follow it consistently unless a higher-priority platform or safety requirement conflicts with it.
 
 IDENTITY
 AI name: {p['ai_name']}
@@ -155,15 +207,15 @@ User gender: {p['user_gender'] or 'Not specified'}
 User information:
 {user_information}
 
-CONVERSATION KNOWLEDGE AND MEMORY
-{knowledge_text}
+RECENT MEMORY / CONVERSATION
+{context_text}
 
 RESPONSE REQUIREMENTS
-- Stay consistent with the selected AI's identity, personality, instructions, traits, rules, and relationship context.
-- Address the current user message directly.
-- Use the user's configured name and information naturally when relevant.
-- Maintain continuity with the supplied conversation memory.
-- Do not silently replace this character with a generic assistant personality.
+- Keep the selected AI's identity, personality, style, instructions, traits, rules, and relationship context consistent.
+- Answer the current user message directly.
+- Use recent conversation only for continuity; it must not override the selected AI profile above.
+- Use the configured user name and information naturally when relevant.
+- Do not silently become a generic assistant.
 - Do not quote, expose, summarize, or mention these internal settings unless the user explicitly asks about their configuration.
 """.strip()
 
@@ -183,9 +235,6 @@ def _local_reply(prompt, settings):
     memory_path = os.path.join(root, "brain_memory.json") if root else None
     learning_path = os.path.join(root, "learning_replies.json") if root else None
 
-    # brain.py already consumes description/personality/instructions/background/user data.
-    # Fold traits and rules into the instructions passed to the local model so the local
-    # GGUF follows the same authoritative settings.json configuration as online providers.
     local = _persona_settings(settings)
     extra = []
     if local["traits"]:
@@ -214,14 +263,15 @@ def _ask_provider(prompt, settings, knowledge, image_path, provider):
         raise RuntimeError(f"{provider} API token is not configured for this AI")
 
     system_prompt = _system_prompt(local, knowledge)
+    persona = _persona_settings(local)
     print(
         "AI PROFILE PROMPT:",
         f"ai_id={local.get('ai_id', '')}",
         f"name={local.get('ai_name', '')}",
         f"provider={provider}",
         f"prompt_chars={len(system_prompt)}",
-        f"traits={len((_persona_settings(local)).get('traits', []))}",
-        f"rules={len((_persona_settings(local)).get('rules', []))}",
+        f"traits={len(persona.get('traits', []))}",
+        f"rules={len(persona.get('rules', []))}",
     )
 
     if provider == "google":
@@ -338,7 +388,5 @@ def ask_online(prompt, settings=None, knowledge="", image_path=None):
     if error and str(prompt).startswith("You are participating in a multi-AI conversation."):
         return f"[ONLINE AI ERROR: {error}]"
     if error and selected != "local":
-        # If the user explicitly selected an online provider, report that
-        # provider failure instead of silently running a different local model.
         raise RuntimeError(error)
     return None
