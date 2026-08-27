@@ -8,3 +8,8 @@ sessions.json
 password_resets.json
 users/
 learning/
+
+# Local runtime files
+logs/
+models/
+profile/default.png
