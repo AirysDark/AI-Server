@@ -9,16 +9,13 @@ from urllib.parse import quote
 
 import requests
 
-# hf-inference changes its hosted image-model catalogue over time. Keep an
-# environment override first, then try current known text-to-image models.
 DEFAULT_IMAGE_MODEL = os.getenv("AI_IMAGE_MODEL", "stabilityai/stable-diffusion-3-medium-diffusers")
-IMAGE_MODELS = [
+FALLBACK_IMAGE_MODELS = (
     DEFAULT_IMAGE_MODEL,
-    "stabilityai/stable-diffusion-3-medium-diffusers",
     "black-forest-labs/FLUX.1-Krea-dev",
     "Qwen/Qwen-Image",
     "ByteDance/Hyper-SD",
-]
+)
 
 
 def is_image_request(text):
@@ -28,20 +25,15 @@ def is_image_request(text):
     return any(x in text for x in subjects) and any(x in text for x in actions)
 
 
-def _candidate_models(model=None):
-    out = []
-    for item in ([model] if model else []) + IMAGE_MODELS:
-        item = str(item or "").strip()
-        if item and item not in out:
-            out.append(item)
-    return out
-
-
-def _request_model(token, prompt, model, timeout):
+def _generate_one(token, prompt, model, timeout):
     url = "https://router.huggingface.co/hf-inference/models/" + quote(model, safe="/")
     response = requests.post(
         url,
-        headers={"Authorization": "Bearer " + token, "Accept": "image/*", "Content-Type": "application/json"},
+        headers={
+            "Authorization": "Bearer " + token,
+            "Accept": "image/png",
+            "Content-Type": "application/json",
+        },
         json={"inputs": str(prompt or "").strip()},
         timeout=timeout,
     )
@@ -53,25 +45,35 @@ def _request_model(token, prompt, model, timeout):
         raise RuntimeError("HTTP %s %s" % (response.status_code, str(detail)[:500]))
     content_type = str(response.headers.get("Content-Type", "")).lower()
     if not response.content or "application/json" in content_type:
-        raise RuntimeError("provider returned no image bytes")
+        raise RuntimeError("Hugging Face did not return image bytes")
     extension = ".png" if "png" in content_type else ".webp" if "webp" in content_type else ".jpg"
-    return response.content, extension
+    return response.content, extension, model
 
 
 def generate_image_bytes(token, prompt, model=None, timeout=120):
     token = str(token or "").strip()
     if not token:
         raise RuntimeError("A Hugging Face token is required for image generation")
+
+    requested = str(model or "").strip()
+    candidates = [requested] if requested else []
+    for candidate in FALLBACK_IMAGE_MODELS:
+        if candidate and candidate not in candidates:
+            candidates.append(candidate)
+
     errors = []
-    for candidate in _candidate_models(model):
+    for candidate in candidates:
         try:
-            data, extension = _request_model(token, prompt, candidate, timeout)
+            result = _generate_one(token, prompt, candidate, timeout)
             print("HF IMAGE GENERATED:", candidate)
-            return data, extension, candidate
+            return result
         except Exception as exc:
-            errors.append("%s: %s" % (candidate, str(exc)[:300]))
-            print("HF IMAGE MODEL FAILED:", candidate, str(exc)[:500])
-    raise RuntimeError("Hugging Face image generation failed: " + "; ".join(errors))
+            print("HF IMAGE MODEL FAILED:")
+            print(candidate)
+            print(str(exc))
+            errors.append("%s: %s" % (candidate, str(exc)))
+
+    raise RuntimeError("Hugging Face image generation failed: " + "; ".join(errors)[:1800])
 
 
 def generate_to_directory(token, prompt, output_dir, model=None):
