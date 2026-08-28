@@ -6,6 +6,7 @@ from api.image_generation import generate_to_directory, is_image_request
 from core import server_impl
 from core.ai_manager import (
     ai_photo_dir,
+    ai_root,
     ensure_archived_conversation,
     load_archived_conversation,
     load_settings,
@@ -23,12 +24,12 @@ def selected_conversation(uid,ai_id):
         if data is not None:return data
     return {"conversation":[],"memory":{},"proactive_state":{}}
 
-def save_message(uid,ai_id,*args):
-    """Persist a chat message while supporting both old and new server signatures.
+def upload_dir(uid,ai_id):
+    """Per-AI directory for images/files uploaded by the user in chat."""
+    return os.path.join(ai_root(uid,ai_id),"uploads")
 
-    Old: save_message(uid, ai_id, user_message, ai_reply, image=None)
-    New: save_message(uid, ai_id, conversation_id, user_message, ai_reply, image=None)
-    """
+def save_message(uid,ai_id,*args):
+    """Persist a chat message while supporting both old and new server signatures."""
     if len(args) == 2:
         cid=selected_id(); user_message,ai_reply=args; image=None
     elif len(args) == 3:
@@ -54,7 +55,6 @@ def _install_chat_result_wrapper():
     if getattr(server_impl,"_image_generation_chat_installed",False): return
     original_chat_result=server_impl._chat_result
     def chat_result(uid,ai_id,conversation_id,message,image_data=None,image_name=None):
-        # Never fail a chat merely because the browser supplied a stale conversation id.
         cid,_=ensure_archived_conversation(uid,ai_id,conversation_id)
         _context.conversation_id=cid
         result=original_chat_result(uid,ai_id,cid,message,image_data,image_name)
@@ -64,27 +64,15 @@ def _install_chat_result_wrapper():
         prompt=str(message or "").strip()
         if generation_enabled and not image_data and is_image_request(prompt):
             try:
-                filename,model=generate_to_directory(
-                    _token_for_image(settings),
-                    prompt,
-                    ai_photo_dir(uid,ai_id),
-                    model=settings.get("image_generation_model"),
-                )
+                filename,model=generate_to_directory(_token_for_image(settings),prompt,ai_photo_dir(uid,ai_id),model=settings.get("image_generation_model"))
                 image_url=f"/users/{uid}/ais/{ai_id}/ai_photos/{filename}"
-                result["image"]=image_url
-                result["image_generated"]=True
-                result["image_model"]=model
+                result["image"]=image_url; result["image_generated"]=True; result["image_model"]=model
                 archive=load_archived_conversation(uid,ai_id,cid)
                 if archive and archive.get("conversation"):
-                    archive["conversation"][-1]["image"]=image_url
-                    archive["conversation"][-1]["image_generated"]=True
-                    archive["updated"]=time.time()
-                    save_archived_conversation(uid,ai_id,cid,archive)
+                    archive["conversation"][-1]["image"]=image_url; archive["conversation"][-1]["image_generated"]=True; archive["updated"]=time.time(); save_archived_conversation(uid,ai_id,cid,archive)
                 print("CHAT IMAGE GENERATED:",f"ai_id={ai_id}",f"conversation_id={cid}",f"model={model}",f"image={image_url}")
             except Exception as exc:
-                # Chat text still succeeds; existing photo-library behavior remains a fallback.
-                result["image_generation_error"]=str(exc)[:500]
-                print("CHAT IMAGE GENERATION FAILED:",str(exc)[:1000])
+                result["image_generation_error"]=str(exc)[:500]; print("CHAT IMAGE GENERATION FAILED:",str(exc)[:1000])
         return result
     server_impl._chat_result=chat_result
     server_impl._image_generation_chat_installed=True
@@ -117,6 +105,7 @@ def apply():
     server_impl.save_conversation=save_message
     server_impl.load_conversation=selected_conversation
     server_impl.learn_from_conversation=learn_message
+    server_impl.upload_dir=upload_dir
     _install_chat_result_wrapper()
     _install_context_wrappers()
     return server_impl
