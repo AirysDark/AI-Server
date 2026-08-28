@@ -1,22 +1,76 @@
 let account=null,lastActivity=Date.now(),timer=null;
 
-function readLastConversationId(){
+function currentAiId(){
+ return String(account?.ai_id||'').trim();
+}
+
+function conversationStorageKey(){
+ const aiId=currentAiId();
+ return aiId?'lastConversation:'+aiId:'lastConversation';
+}
+
+function clearSelectedConversation(){
+ document.cookie='AI_chat=; Path=/; SameSite=Lax; Max-Age=0';
  try{
+  sessionStorage.removeItem('selectedConversation');
+  localStorage.removeItem(conversationStorageKey());
   const saved=JSON.parse(localStorage.getItem('lastConversation')||'null');
-  if(saved&&saved.conversation_id)return String(saved.conversation_id);
+  if(saved&&(!saved.ai_id||saved.ai_id===currentAiId()))localStorage.removeItem('lastConversation');
+  localStorage.removeItem('lastConversationId');
+ }catch(e){}
+}
+
+function readLastConversationId(){
+ const aiId=currentAiId();
+ try{
+  const scoped=JSON.parse(localStorage.getItem(conversationStorageKey())||'null');
+  if(scoped&&scoped.conversation_id)return String(scoped.conversation_id);
  }catch(e){}
  try{
-  const legacy=localStorage.getItem('lastConversationId');
-  if(legacy)return String(legacy);
+  const saved=JSON.parse(localStorage.getItem('lastConversation')||'null');
+  if(saved&&saved.conversation_id&&saved.ai_id===aiId)return String(saved.conversation_id);
  }catch(e){}
  const cookie=document.cookie.split(';').map(x=>x.trim()).find(x=>x.startsWith('AI_chat='));
  return cookie?decodeURIComponent(cookie.slice('AI_chat='.length)):'';
 }
+
 function setSelectedConversation(id){
  const value=String(id||'').trim();
  if(!value)return;
+ const aiId=currentAiId();
  document.cookie='AI_chat='+encodeURIComponent(value)+'; Path=/; SameSite=Lax; Max-Age=31536000';
- try{localStorage.setItem('lastConversation',JSON.stringify({conversation_id:value,ai_id:account?.ai_id||''}));localStorage.setItem('lastConversationId',value)}catch(e){}
+ try{
+  const saved={conversation_id:value,ai_id:aiId};
+  localStorage.setItem(conversationStorageKey(),JSON.stringify(saved));
+  localStorage.setItem('lastConversation',JSON.stringify(saved));
+  localStorage.removeItem('lastConversationId');
+ }catch(e){}
+}
+
+async function createAndSelectConversation(){
+ clearSelectedConversation();
+ const result=await apiPost('/api/chats/new',{});
+ if(!result||result.ok===false||!result.conversation_id)throw Error(result?.error||'Could not create conversation');
+ const id=String(result.conversation_id);
+ setSelectedConversation(id);
+ const chat=document.getElementById('chat');
+ if(chat)chat.innerHTML='';
+ sessionStorage.setItem('selectedConversation',JSON.stringify({conversation_id:id,data:{conversation:[]}}));
+ return id;
+}
+
+async function restoreOrCreateConversation(preferredId=''){
+ const id=String(preferredId||readLastConversationId()||'').trim();
+ if(id){
+  try{
+   await loadSelectedChat(id);
+   return id;
+  }catch(e){
+   console.warn('Saved conversation is not valid for this AI; creating a new one:',e);
+   clearSelectedConversation();
+  }
+ }
+ return await createAndSelectConversation();
 }
 
 async function boot(){
@@ -26,24 +80,12 @@ async function boot(){
   account=me;
   const s=await (await fetch('/api/settings',{credentials:'same-origin',cache:'no-store'})).json();
   if(!s||s.error)throw Error(s?.error||'Could not load AI settings');
+  account.ai_id=String(s.ai_id||account.ai_id||'').trim();
   if(!s.setup_complete){location.href='setup.html';return}
   fillSettings(s);
   const params=new URLSearchParams(location.search);
   const chatId=params.get('chat');
-  if(chatId){
-   setSelectedConversation(chatId);
-   await loadSelectedChat(chatId);
-  }else{
-   const lastChat=readLastConversationId();
-   if(lastChat){
-    try{await loadSelectedChat(lastChat)}catch(e){
-     console.warn('Saved conversation could not be restored:',e);
-     try{localStorage.removeItem('lastConversation')}catch(x){}
-     try{localStorage.removeItem('lastConversationId')}catch(x){}
-     await loadMemory();
-    }
-   }else await loadMemory();
-  }
+  await restoreOrCreateConversation(chatId||'');
   startProactive();
  }catch(e){
   console.error('AI boot failed',e);
