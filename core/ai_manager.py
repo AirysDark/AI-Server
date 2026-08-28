@@ -35,6 +35,15 @@ def save_archived_conversation(uid,ai_id,conversation_id,data):
     save_json(conversation_path(uid,ai_id,safe),data)
     return data
 
+def ensure_archived_conversation(uid,ai_id,conversation_id=None):
+    """Return a valid per-AI conversation id and payload, creating it if missing/stale."""
+    safe=clean_id(conversation_id)
+    if not safe or safe=="current" or load_archived_conversation(uid,ai_id,safe) is None:
+        safe="C-"+uuid.uuid4().hex[:16]
+        now=time.time()
+        save_archived_conversation(uid,ai_id,safe,{"conversation":[],"memory":{},"proactive_state":{},"created":now,"updated":now})
+    return safe,load_archived_conversation(uid,ai_id,safe)
+
 def blank_settings(uid,ai_id):
     return {"user_id":uid,"ai_id":ai_id,"setup_complete":False,"ai_name":"","profile_photo":"","description":"","background":"","user_information":"","user_name":"","personality":"","instructions":"","api_provider":"huggingface","api_token":"","hf_token":"","google_token":"","openai_token":"","openrouter_token":"","gemini_api_key":"","api_endpoint":"","api_model":"","local_model_path":"","config":{"traits":[],"rules":[]},"features":{"online_ai":True,"learning":True,"long_term_memory":True,"relevant_memory":True,"automatic_images":False,"proactive_images":False},"proactive":{"enabled":False}}
 def load_settings(uid,ai_id):
