@@ -77,6 +77,8 @@ class MainActivity : AppCompatActivity() {
         loadingProgress = findViewById(R.id.loading_progress)
 
         setupWebView()
+        findViewById<Button>(R.id.btn_server_config).setOnClickListener { showConfig() }
+        serverUrlInput.setText(getSharedPreferences("LocalAIPrefs", Context.MODE_PRIVATE).getString("server_url", "https://ai-server.ddns.net"))
 
         val sharedPrefs = getSharedPreferences("LocalAIPrefs", Context.MODE_PRIVATE)
         val defaultUrl = "https://ai-server.ddns.net"
@@ -153,6 +155,15 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
+            override fun onReceivedHttpError(view: WebView?, request: WebResourceRequest?, errorResponse: WebResourceResponse?) {
+                if (request?.isForMainFrame == true) showConfig("Server returned HTTP ${errorResponse?.statusCode}. Check the server address.")
+            }
+
+            override fun onReceivedSslError(view: WebView?, handler: android.webkit.SslErrorHandler?, error: android.net.http.SslError?) {
+                handler?.cancel()
+                showConfig("Secure connection failed. Check the server address or certificate.")
+            }
+
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                 super.onPageStarted(view, url, favicon)
                 // Optionally show loading on navigation
@@ -196,6 +207,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showConfig(error: String? = null) {
+        serverUrlInput.setText(getSharedPreferences("LocalAIPrefs", Context.MODE_PRIVATE).getString("server_url", "https://ai-server.ddns.net"))
         configLayout.visibility = View.VISIBLE
         webView.visibility = View.GONE
         loadingProgress.visibility = View.GONE
@@ -397,7 +409,8 @@ class MainActivity : AppCompatActivity() {
             
             with(sharedPref.edit()) {
                 putString("user_id", userId)
-                putString("server_url", serverUrl)
+                // The web page must not override the address explicitly selected in App Config.
+                // In particular, older pages report the public default even on local servers.
                 putString("cookies", cookies)
                 if (photoUrl.isNotEmpty()) putString("profile_photo", photoUrl)
                 apply()
