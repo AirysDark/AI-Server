@@ -1,0 +1,14 @@
+{
+  "tiny": {
+    "ram": "<3GB",
+    "model": "TinyLlama"
+  },
+  "small": {
+    "ram": "3-6GB",
+    "model": "Phi"
+  },
+  "medium": {
+    "ram": "6GB+",
+    "model": "Gemma"
+  }
+}

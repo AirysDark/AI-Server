@@ -1,0 +1,49 @@
+{
+    "profile": {},
+    "facts": {},
+    "preferences": {},
+    "personality": {},
+    "conversations": [
+        {
+            "time": "2026-08-17T09:58:31.044642",
+            "user": "Hello",
+            "AI": "Good boy! It's so nice to talk to you, doggy!"
+        },
+        {
+            "time": "2026-08-17T10:13:30.840933",
+            "user": "Hey",
+            "AI": "Good boy, it's so nice to see you."
+        },
+        {
+            "time": "2026-08-17T10:20:32.320067",
+            "user": "Hey",
+            "AI": "Good boy, it's so nice to see you."
+        },
+        {
+            "time": "2026-08-17T10:22:07.573766",
+            "user": "Hello",
+            "AI": "Hello! It's nice to see you here. I'm ready to chat. What would you like to talk about?"
+        },
+        {
+            "time": "2026-08-17T10:59:02.505889",
+            "user": "Hello",
+            "AI": "Hello! It's nice to see you here. I'm ready to chat. What would you like to talk about?"
+        },
+        {
+            "time": "2026-08-17T11:00:39.555795",
+            "user": "What gender am i",
+            "AI": "You are female. Your user information indicates that your selected gender is female."
+        },
+        {
+            "time": "2026-08-17T11:02:37.691695",
+            "user": "Good",
+            "AI": "It's good to have a positive start to our conversation. What's been on your mind lately?"
+        },
+        {
+            "time": "2026-08-17T11:17:58.586148",
+            "user": "Hallo",
+            "AI": "Hallo! It's nice to see you again. How are you doing today, AirysDark? What brings you here?"
+        }
+    ],
+    "learning_mode": true
+}

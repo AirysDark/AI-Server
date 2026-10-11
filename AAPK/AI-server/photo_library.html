@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI - Photo Library</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#101014;color:#eee;font-family:Arial,sans-serif;padding:12px}
+.wrap{max-width:760px;margin:4vh auto}
+.card{background:#181820;border:1px solid #333;border-radius:18px;padding:18px;margin-bottom:12px}
+.logo{font-size:32px;font-weight:bold;color:#ff5c9a}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+button{flex:1;min-width:130px;background:#ff5c9a;color:#fff;border:0;border-radius:10px;padding:12px 15px;font-size:15px;cursor:pointer}
+.secondary{background:#444}
+.small{color:#aaa;font-size:13px}
+.gallery{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:16px}
+.photo{background:#111118;border:1px solid #333;border-radius:14px;padding:8px;overflow:hidden}
+.photo img{display:block;width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:9px;background:#0b0b0e}
+.empty{text-align:center;color:#aaa;padding:30px 10px}
+@media(max-width:430px){.gallery{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="card">
+<div class="logo">AI</div>
+<h1>Photo Library</h1>
+<p class="small">Photos stored in this AI's private <b>ai_photos</b> library. These are the photos this AI can send in chat.</p>
+<div id="status" class="small">Loading photos...</div>
+<div id="gallery" class="gallery"></div>
+</div>
+<div class="actions">
+<button onclick="location.href='index.html'">Back to AI</button>
+<button class="secondary" onclick="location.href='select_ai.html'">Switch AI</button>
+</div>
+</div>
+<script>
+async function load(){
+ const status=document.getElementById('status'),gallery=document.getElementById('gallery');
+ try{
+  const me=await (await fetch('/api/auth/me')).json();
+  if(!me.authenticated){location.href='login.html';return}
+  const s=await (await fetch('/api/settings')).json();
+  if(!s.setup_complete){location.href='setup.html';return}
+  const uid=s.user_id,ai=s.ai_id;
+  const dir='/users/'+encodeURIComponent(uid)+'/ais/'+encodeURIComponent(ai)+'/ai_photos/';
+  const r=await fetch(dir,{cache:'no-store'});
+  if(!r.ok)throw Error('Could not open the AI photo library');
+  const html=await r.text();
+  const doc=new DOMParser().parseFromString(html,'text/html');
+  const links=Array.from(doc.querySelectorAll('a[href]'))
+   .map(a=>a.getAttribute('href'))
+   .filter(x=>x&&!x.endsWith('/')&&!x.startsWith('?')&&!x.startsWith('#'))
+   .filter(x=>/\.(jpe?g|png|webp|gif)$/i.test(x));
+  gallery.innerHTML='';
+  if(!links.length){gallery.innerHTML='<div class="empty" style="grid-column:1/-1">No photos in this AI library yet.</div>';status.textContent='0 photos';return}
+  const photoBase=new URL(dir,window.location.origin);
+  links.forEach(href=>{
+   const card=document.createElement('div');card.className='photo';
+   const img=document.createElement('img');
+   img.loading='lazy';img.src=new URL(href,photoBase).href;img.alt='AI photo';
+   card.appendChild(img);gallery.appendChild(card);
+  });
+  status.textContent=links.length+' photo'+(links.length===1?'':'s')+' available';
+ }catch(e){status.textContent=e.message;gallery.innerHTML='<div class="empty" style="grid-column:1/-1">Photo library could not be loaded.</div>';console.error(e)}
+}
+load();
+</script>
+</body>
+</html>
