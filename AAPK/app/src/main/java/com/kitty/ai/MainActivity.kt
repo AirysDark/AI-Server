@@ -79,7 +79,7 @@ class MainActivity : AppCompatActivity() {
         setupWebView()
 
         val sharedPrefs = getSharedPreferences("LocalAIPrefs", Context.MODE_PRIVATE)
-        val defaultUrl = "http://ai-server.ddns.net"
+        val defaultUrl = "https://ai-server.ddns.net"
         var savedUrl = sharedPrefs.getString("server_url", null)
 
         if (savedUrl.isNullOrEmpty()) {
@@ -209,8 +209,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun loadServer(inputUrl: String) {
         var url = inputUrl.trim()
-        if (!url.startsWith("http")) {
-            url = "http://$url"
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            url = "https://$url"
         }
         if (url.endsWith("/")) {
             url = url.substring(0, url.length - 1)
@@ -257,7 +257,7 @@ class MainActivity : AppCompatActivity() {
                     if (avatar && avatar.src && !avatar.src.includes('default.png')) {
                         photoUrl = avatar.src;
                     }
-                    var srv = localStorage.getItem('local_ai_server_url') || 'http://ai-server.ddns.net';
+                    var srv = localStorage.getItem('local_ai_server_url') || 'https://ai-server.ddns.net';
                     
                     if (userId || (photoUrl && photoUrl !== lastSyncedPhoto)) {
                         AndroidApp.syncData(userId || '', srv, document.cookie, photoUrl);
@@ -305,7 +305,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun syncSession() {
         val sharedPrefs = getSharedPreferences("LocalAIPrefs", Context.MODE_PRIVATE)
-        val serverUrl = sharedPrefs.getString("server_url", "http://ai-server.ddns.net") ?: "http://ai-server.ddns.net"
+        val serverUrl = sharedPrefs.getString("server_url", "https://ai-server.ddns.net") ?: "https://ai-server.ddns.net"
         val cookies = CookieManager.getInstance().getCookie(serverUrl) ?: ""
         
         webView.evaluateJavascript("(function() { " +
